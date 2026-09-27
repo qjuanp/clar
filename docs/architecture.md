@@ -91,6 +91,94 @@ normally a tracked property, so without this listener task counts would go stale
 registered inside `onDataUpdated()` rather than the constructor because `this.app` isn't
 guaranteed to be populated yet at construction time.
 
+## Component dependencies
+
+The diagram below shows every `src/` module (top subgraph), the Obsidian-provided API
+surface each one depends on (bottom subgraph — this is the "expected from Obsidian"
+contract: base classes to extend, objects to receive, and methods to call), and the one
+external library dependency. Solid arrows are calls/constructions, labeled with the
+actual parameters passed; dashed arrows are plain imports of shared constants. Nodes with
+a dashed border are supplied by Obsidian core (or, for SortableJS, an external package),
+not implemented by this plugin.
+
+```mermaid
+flowchart TD
+    subgraph Clar["Clár plugin (src/)"]
+        main["main.ts<br/>ClarPlugin"]
+        register["register-kanban-view.ts<br/>registerKanbanView()"]
+        viewOptions["kanban-view-options.ts<br/>createKanbanViewOptions()"]
+        propType["property-type.ts<br/>isListProperty()"]
+        constants["constants.ts<br/>KANBAN_VIEW_TYPE, KANBAN_OPTION_KEYS,<br/>NO_COLUMN_ID, NO_COLUMN_LABEL"]
+        view["kanban-view.ts<br/>KanbanBasesView"]
+        grouping["kanban-grouping.ts<br/>buildKanbanColumns()"]
+        taskStats["task-stats.ts<br/>getTaskStats()"]
+        render["kanban-render.ts<br/>renderKanbanBoard()"]
+    end
+
+    subgraph ObsidianAPI["Obsidian API surface (host app — expected, not implemented here)"]
+        ObsPluginBase["Plugin (base class)"]
+        ObsRegisterView["Plugin.registerBasesView()"]
+        ObsBasesView["BasesView (base class)"]
+        ObsQueryController["QueryController"]
+        ObsBasesViewConfig["BasesViewConfig (this.config)"]
+        ObsBasesQueryResult["BasesQueryResult (this.data.data)"]
+        ObsBasesEntry["BasesEntry.getValue()"]
+        ObsWorkspace["App.workspace"]
+        ObsMetadataCache["App.metadataCache"]
+        ObsMetadataTypeManager["App.metadataTypeManager (internal, undocumented)"]
+        ObsParsePropertyId["parsePropertyId()"]
+        ObsTFile["TFile"]
+    end
+
+    subgraph External["External library"]
+        Sortable["SortableJS: new Sortable()"]
+    end
+
+    main -->|extends| ObsPluginBase
+    main -->|"registerKanbanView(this: Plugin)"| register
+
+    register -->|"plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })"| ObsRegisterView
+    register -->|"createKanbanViewOptions(plugin.app)"| viewOptions
+    register -->|"factory(controller, containerEl) => new KanbanBasesView(...)"| view
+
+    viewOptions -->|"isListProperty(app, propertyId)"| propType
+    viewOptions -.->|imports| constants
+
+    propType -->|"parsePropertyId(propertyId)"| ObsParsePropertyId
+    propType -->|"app.metadataTypeManager.properties[name].type"| ObsMetadataTypeManager
+
+    view -->|"extends BasesView(controller)"| ObsBasesView
+    view -->|"constructor(controller, containerEl)"| ObsQueryController
+    view -.->|imports| constants
+    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get('columnOrder')"| ObsBasesViewConfig
+    view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
+    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder)"| grouping
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn)"| render
+    view -->|"getTaskStats(app, file)"| taskStats
+    view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
+    view -->|"this.app.metadataCache.on('changed', cb)"| ObsMetadataCache
+
+    grouping -.->|imports| constants
+    grouping -->|"entry.getValue(groupProperty) : Value"| ObsBasesEntry
+
+    taskStats -->|"app.metadataCache.getFileCache(file)"| ObsMetadataCache
+
+    render -->|"onOpenFile(entry.file: TFile)"| ObsTFile
+    render -->|"new Sortable(cardsEl, { disabled: true })"| Sortable
+
+    classDef obsidian stroke-dasharray: 5 5;
+    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile obsidian;
+    classDef external stroke-dasharray: 2 2;
+    class Sortable external;
+```
+Reading this as "what Clár expects Obsidian to provide": a `Plugin` base class with
+`registerBasesView()`; a `BasesView` base class constructed with a `QueryController`;
+per-view `BasesViewConfig` (`get`/`getAsPropertyId`) and `BasesQueryResult`
+(`this.data.data`) objects supplied by the Bases engine on every render; `BasesEntry`
+objects with `getValue()`; `App.workspace` and `App.metadataCache` (both public API); the
+`parsePropertyId()` helper and `TFile` type; and, as the one undocumented exception,
+`App.metadataTypeManager` (see Known limitations below).
+
 ## Data flow
 
 ```
