@@ -1,7 +1,7 @@
 import { BasesView, type QueryController, type TFile } from 'obsidian';
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
-import { buildKanbanColumns } from './kanban-grouping';
+import { buildKanbanColumns } from './kanban-columns';
 import { renderKanbanBoard } from './kanban-render';
 import { getTaskStats } from './task-stats';
 

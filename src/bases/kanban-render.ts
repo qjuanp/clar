@@ -1,6 +1,6 @@
 import Sortable from 'sortablejs';
 import type { TFile } from 'obsidian';
-import type { KanbanColumn } from './kanban-grouping';
+import type { KanbanColumn } from './kanban-columns';
 import type { TaskStats } from './task-stats';
 
 /**
