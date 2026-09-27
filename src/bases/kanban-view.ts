@@ -3,6 +3,7 @@ import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
 import { buildKanbanColumns } from './kanban-grouping';
 import { renderKanbanBoard } from './kanban-render';
+import { getTaskStats } from './task-stats';
 
 function parseColumnOrder(rawValue: unknown): string[] {
 	if (typeof rawValue !== 'string') {
@@ -19,6 +20,7 @@ export class KanbanBasesView extends BasesView {
 
 	private readonly boardEl: HTMLElement;
 	private sortables: Sortable[] = [];
+	private metadataListenerRegistered = false;
 
 	constructor(controller: QueryController, containerEl: HTMLElement) {
 		super(controller);
@@ -27,6 +29,16 @@ export class KanbanBasesView extends BasesView {
 	}
 
 	onDataUpdated(): void {
+		if (!this.metadataListenerRegistered) {
+			this.metadataListenerRegistered = true;
+			// Bases' own onDataUpdated() only fires when the query result changes
+			// (filters/sort/frontmatter). Toggling a checkbox edits the note body, not
+			// a tracked property, so re-render on every metadata cache update to keep
+			// task counts current. Registered here (rather than the constructor) since
+			// `this.app` isn't guaranteed to be populated yet at construction time.
+			this.registerEvent(this.app.metadataCache.on('changed', () => this.onDataUpdated()));
+		}
+
 		this.destroySortables();
 
 		const groupProperty = this.config.getAsPropertyId(KANBAN_OPTION_KEYS.GROUP_PROPERTY);
@@ -41,7 +53,12 @@ export class KanbanBasesView extends BasesView {
 
 		const columnOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
 		const columns = buildKanbanColumns(this.data.data, groupProperty, columnOrder);
-		this.sortables = renderKanbanBoard(this.boardEl, columns, (file) => this.openFile(file));
+		this.sortables = renderKanbanBoard(
+			this.boardEl,
+			columns,
+			(file) => this.openFile(file),
+			(file) => getTaskStats(this.app, file),
+		);
 	}
 
 	onunload(): void {

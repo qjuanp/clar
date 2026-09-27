@@ -44,6 +44,16 @@ scope for this pass, these rules just make columns/cards legible.
 	cursor: pointer;
 }
 
+.clar-kanban-card__title {
+	font-weight: 500;
+}
+
+.clar-kanban-card__meta {
+	margin-top: 4px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 .clar-kanban-empty {
 	padding: 8px;
 	color: var(--text-muted);

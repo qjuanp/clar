@@ -52,12 +52,23 @@ groupProperty, columnOrder)`:
   they actually have entries), then any other discovered columns in order of first
   appearance, then "No column" last, always, if non-empty.
 
+### `src/bases/task-stats.ts`
+`getTaskStats(app, file)` reads `app.metadataCache.getFileCache(file)?.listItems` — the
+already-parsed cache, no disk I/O. A "task" is any `ListItemCache` whose `task` field is
+defined: `task === ' '` means incomplete, any other character means done (this is
+Obsidian's own definition, so it also works with task plugins that use custom status
+characters). Returns `null` when the note has no tasks at all, otherwise
+`{ active, progressPercent }` with `progressPercent = Math.round(completed / total * 100)`
+(standard rounding, not ceiling).
+
 ### `src/bases/kanban-render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile)` clears and rebuilds the board from
-scratch on every call (no diffing needed since there's no drag-and-drop yet). Renders
-one `.clar-kanban-column` per column with a title and a card list; one
-`.clar-kanban-card` per entry showing only `entry.file.basename` (title-only, per
-spec), with a click handler that opens the note. Each column's card list gets a
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats)` clears and rebuilds the
+board from scratch on every call (no diffing needed since there's no drag-and-drop yet).
+Renders one `.clar-kanban-column` per column with a title and a card list; one
+`.clar-kanban-card` per entry with a `.clar-kanban-card__title` (`entry.file.basename`)
+and, only when `getTaskStats(entry.file)` returns non-null, a `.clar-kanban-card__meta`
+block showing "Active tasks: N" and "Progress: N%" — notes with zero tasks show just the
+title, unchanged from before. Each column's card list gets a
 `new Sortable(cardsEl, { disabled: true })` instance — SortableJS is wired in as the
 stated foundation, but intentionally inert. Returns the created `Sortable` instances so
 the view can destroy them before the next render.
@@ -68,8 +79,17 @@ is where re-rendering happens: it reads `groupProperty` via
 `this.config.getAsPropertyId('groupProperty')` and `columnOrder` via
 `this.config.get('columnOrder')` (comma-split/trimmed), shows an empty-state prompt if
 no property is configured yet, otherwise calls `buildKanbanColumns()` then
-`renderKanbanBoard()`. `onunload()` destroys any tracked `Sortable` instances
-defensively.
+`renderKanbanBoard()`, passing a `(file) => getTaskStats(this.app, file)` callback.
+`onunload()` destroys any tracked `Sortable` instances defensively.
+
+On its first call, `onDataUpdated()` also registers a
+`this.app.metadataCache.on('changed', ...)` listener (via `registerEvent`, one-time
+guarded) that re-invokes `onDataUpdated()` on every metadata cache update. This exists
+because Bases' own `onDataUpdated()` only fires when the *query result* changes
+(filters/sort/frontmatter-driven) — toggling a checkbox edits the note body, which isn't
+normally a tracked property, so without this listener task counts would go stale. It's
+registered inside `onDataUpdated()` rather than the constructor because `this.app` isn't
+guaranteed to be populated yet at construction time.
 
 ## Data flow
 
@@ -109,3 +129,8 @@ base" for free.
 - **Column-order matching is exact, case-sensitive string comparison** between the
   configured `columnOrder` text and each column's stringified property value; unmatched
   configured labels are silently dropped (no empty phantom columns are created).
+- **Task-stats refresh is vault-wide, not scoped to the board's visible files.** The
+  `metadataCache.on('changed', ...)` listener re-renders the whole board on *any* file's
+  cache update, not just files currently shown. Simple and correct, if slightly more
+  re-rendering than a scoped listener would do — acceptable at the note counts this view
+  targets.

@@ -50,6 +50,8 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
      confirm only the first value (`Todo`) determines its column.
    - One note that **omits the property entirely** — to confirm it lands in "No
      column".
+   - Among these, include a note with a mix of checked/unchecked tasks (e.g.
+     `- [ ] one` and `- [x] two`), and a note with **no tasks at all**.
 2. **Create or open a `.base` file** over a folder containing those notes, and add a
    base-level filter that excludes at least one note — to confirm the Kanban view never
    shows filtered-out notes.
@@ -67,6 +69,11 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    - Clicking a card opens the corresponding note.
 6. **Rename check**: confirm the view's name is editable via Bases' own view-management
    UI (the plugin doesn't add a separate "name" option — see `architecture.md`).
+7. **Task details**: for the note with a mix of checked/unchecked tasks, confirm its
+   card shows "Active tasks: N" (count of unchecked boxes) and "Progress: N%" (rounded
+   percentage of checked boxes) below the title. Confirm the note with no tasks shows
+   neither line — just the title, as before. Open the mixed-tasks note, toggle a
+   checkbox, and confirm the board updates without a manual reload.
 
 ## Rebuild/reload loop
 

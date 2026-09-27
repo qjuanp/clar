@@ -1,6 +1,7 @@
 import Sortable from 'sortablejs';
 import type { TFile } from 'obsidian';
 import type { KanbanColumn } from './kanban-grouping';
+import type { TaskStats } from './task-stats';
 
 /**
  * Rebuilds the board from scratch on every call. No diffing is needed since
@@ -10,6 +11,7 @@ export function renderKanbanBoard(
 	boardEl: HTMLElement,
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
+	getTaskStats: (file: TFile) => TaskStats | null,
 ): Sortable[] {
 	boardEl.empty();
 
@@ -29,10 +31,22 @@ export function renderKanbanBoard(
 
 		const cardsEl = columnEl.createDiv({ cls: 'clar-kanban-column__cards' });
 		for (const entry of column.entries) {
-			const cardEl = cardsEl.createDiv({
-				cls: 'clar-kanban-card',
-				text: entry.file.basename,
-			});
+			const cardEl = cardsEl.createDiv({ cls: 'clar-kanban-card' });
+			cardEl.createDiv({ cls: 'clar-kanban-card__title', text: entry.file.basename });
+
+			const stats = getTaskStats(entry.file);
+			if (stats) {
+				const metaEl = cardEl.createDiv({ cls: 'clar-kanban-card__meta' });
+				metaEl.createDiv({
+					cls: 'clar-kanban-card__active-tasks',
+					text: `Active tasks: ${stats.active}`,
+				});
+				metaEl.createDiv({
+					cls: 'clar-kanban-card__progress',
+					text: `Progress: ${stats.progressPercent}%`,
+				});
+			}
+
 			cardEl.addEventListener('click', () => onOpenFile(entry.file));
 		}
 
