@@ -1,8 +1,8 @@
 import { BasesView, type QueryController, type TFile } from 'obsidian';
 import type Sortable from 'sortablejs';
-import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from '../core/constants';
-import { buildKanbanColumns } from '../core/columns';
-import { getTaskStats } from '../core/task-stats';
+import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
+import { buildKanbanColumns } from './columns';
+import { getTaskStats } from './task-stats';
 import { renderKanbanBoard } from './render';
 
 function parseColumnOrder(rawValue: unknown): string[] {

@@ -1,7 +1,7 @@
 import Sortable from 'sortablejs';
 import type { TFile } from 'obsidian';
-import type { KanbanColumn } from '../core/columns';
-import type { TaskStats } from '../core/task-stats';
+import type { KanbanColumn } from './columns';
+import type { TaskStats } from './task-stats';
 
 /**
  * Rebuilds the board from scratch on every call. No diffing is needed since

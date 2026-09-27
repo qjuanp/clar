@@ -1,5 +1,5 @@
 import type { Plugin } from 'obsidian';
-import { KANBAN_VIEW_TYPE } from '../core/constants';
+import { KANBAN_VIEW_TYPE } from './constants';
 import { KanbanBasesView } from './view';
 import { createKanbanViewOptions } from './view-options';
 
