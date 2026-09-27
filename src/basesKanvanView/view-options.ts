@@ -1,5 +1,5 @@
 import type { App, BasesAllOptions, BasesViewConfig } from 'obsidian';
-import { KANBAN_OPTION_KEYS } from './constants';
+import { KANBAN_OPTION_KEYS } from '../core/constants';
 import { isListProperty } from './property-type';
 
 /**

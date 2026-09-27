@@ -11,13 +11,18 @@ no style polish.
 
 ## Components
 
-### `src/bases/register-kanban-view.ts`
+Modules are split by dependency direction: `src/basesKanvanView/` holds everything that
+talks to the Obsidian/Bases API directly, and `src/core/` holds framework-agnostic pure
+logic that only knows about plain data (`ListItemCache[]`, `BasesEntry[]`, strings) —
+nothing in `src/core/` imports `App`, `TFile`, or any other live Obsidian object.
+
+### `src/basesKanvanView/register-view.ts`
 Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })` from
 `onload()`. The `factory` constructs a `KanbanBasesView`; `options` comes from
-`kanban-view-options.ts`. Warns (doesn't throw) if registration returns `false`, which
+`view-options.ts`. Warns (doesn't throw) if registration returns `false`, which
 means the core Bases plugin isn't enabled in the vault.
 
-### `src/bases/kanban-view-options.ts`
+### `src/basesKanvanView/view-options.ts`
 Builds the two view-configuration controls exposed in the Bases toolbar, per the spec:
 - **Column property** — a `BasesPropertyOption` ("property" dropdown) filtered via
   `isListProperty()` so only list-type frontmatter properties are selectable.
@@ -28,7 +33,7 @@ Bases view (of any type) a user-editable name generically through Bases' own vie
 management UI, so the spec's "Name of the view" requirement is satisfied by the
 platform, not by plugin code.
 
-### `src/bases/property-type.ts`
+### `src/basesKanvanView/property-type.ts`
 `isListProperty(app, propertyId)` restricts the dropdown to `note.*` (frontmatter)
 properties whose declared type is Obsidian's list type. Obsidian's public API has no
 documented way to read a property's declared type, so this reaches into
@@ -37,7 +42,7 @@ try/catch-guarded lookup. If that shape is missing or changes in a future Obsidi
 release, the fallback is to show **all** `note.*` properties in the dropdown, rather
 than hiding all of them, so the feature degrades gracefully instead of breaking.
 
-### `src/bases/kanban-grouping.ts`
+### `src/core/columns.ts`
 Pure functions, no DOM — the easiest part of this feature to verify without a test
 framework (this repo has none; see Verification below). `buildKanbanColumns(entries,
 groupProperty, columnOrder)`:
@@ -52,16 +57,18 @@ groupProperty, columnOrder)`:
   they actually have entries), then any other discovered columns in order of first
   appearance, then "No column" last, always, if non-empty.
 
-### `src/bases/task-stats.ts`
-`getTaskStats(app, file)` reads `app.metadataCache.getFileCache(file)?.listItems` — the
-already-parsed cache, no disk I/O. A "task" is any `ListItemCache` whose `task` field is
-defined: `task === ' '` means incomplete, any other character means done (this is
-Obsidian's own definition, so it also works with task plugins that use custom status
-characters). Returns `null` when the note has no tasks at all, otherwise
-`{ active, progressPercent }` with `progressPercent = Math.round(completed / total * 100)`
-(standard rounding, not ceiling).
+### `src/core/task-stats.ts`
+`getTaskStats(listItems: ListItemCache[])` takes the already-parsed list items directly —
+it does not touch `App` or `TFile` at all, which keeps this module pure and independent of
+Obsidian's live API surface. The caller (`KanbanBasesView`) is responsible for resolving
+`app.metadataCache.getFileCache(file)?.listItems ?? []` *before* calling in. A "task" is
+any `ListItemCache` whose `task` field is defined: `task === ' '` means incomplete, any
+other character means done (this is Obsidian's own definition, so it also works with task
+plugins that use custom status characters). Returns `null` when the note has no tasks at
+all, otherwise `{ active, progressPercent }` with
+`progressPercent = Math.round(completed / total * 100)` (standard rounding, not ceiling).
 
-### `src/bases/kanban-render.ts`
+### `src/basesKanvanView/render.ts`
 `renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats)` clears and rebuilds the
 board from scratch on every call (no diffing needed since there's no drag-and-drop yet).
 Renders one `.clar-kanban-column` per column with a title and a card list; one
@@ -73,14 +80,17 @@ title, unchanged from before. Each column's card list gets a
 stated foundation, but intentionally inert. Returns the created `Sortable` instances so
 the view can destroy them before the next render.
 
-### `src/bases/kanban-view.ts`
+### `src/basesKanvanView/view.ts`
 `KanbanBasesView extends BasesView`. `onDataUpdated()` (the one method Bases requires)
 is where re-rendering happens: it reads `groupProperty` via
 `this.config.getAsPropertyId('groupProperty')` and `columnOrder` via
 `this.config.get('columnOrder')` (comma-split/trimmed), shows an empty-state prompt if
 no property is configured yet, otherwise calls `buildKanbanColumns()` then
-`renderKanbanBoard()`, passing a `(file) => getTaskStats(this.app, file)` callback.
-`onunload()` destroys any tracked `Sortable` instances defensively.
+`renderKanbanBoard()`, passing a
+`(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
+callback — this is where the Obsidian-specific cache lookup happens, right before handing
+plain data into the pure `getTaskStats()`. `onunload()` destroys any tracked `Sortable`
+instances defensively.
 
 On its first call, `onDataUpdated()` also registers a
 `this.app.metadataCache.on('changed', ...)` listener (via `registerEvent`, one-time
@@ -93,26 +103,32 @@ guaranteed to be populated yet at construction time.
 
 ## Component dependencies
 
-The diagram below shows every `src/` module (top subgraph), the Obsidian-provided API
-surface each one depends on (bottom subgraph — this is the "expected from Obsidian"
-contract: base classes to extend, objects to receive, and methods to call), and the one
-external library dependency. Solid arrows are calls/constructions, labeled with the
-actual parameters passed; dashed arrows are plain imports of shared constants. Nodes with
-a dashed border are supplied by Obsidian core (or, for SortableJS, an external package),
-not implemented by this plugin.
+The diagram below groups every `src/` module by folder — `basesKanvanView/` (Obsidian/Bases
+glue) and `core/` (framework-agnostic pure logic) — plus the Obsidian-provided API surface
+each one depends on (bottom subgraph — this is the "expected from Obsidian" contract: base
+classes to extend, objects to receive, and methods to call), and the one external library
+dependency. Solid arrows are calls/constructions, labeled with the actual parameters
+passed; dashed arrows are plain imports of shared constants. Nodes with a dashed border
+are supplied by Obsidian core (or, for SortableJS, an external package), not implemented
+by this plugin. Note that nothing in the `core/` subgraph has an edge into the Obsidian API
+subgraph — that separation is the point of the folder split.
 
 ```mermaid
 flowchart TD
-    subgraph Clar["Clár plugin (src/)"]
-        main["main.ts<br/>ClarPlugin"]
-        register["register-kanban-view.ts<br/>registerKanbanView()"]
-        viewOptions["kanban-view-options.ts<br/>createKanbanViewOptions()"]
+    main["main.ts<br/>ClarPlugin"]
+
+    subgraph BasesKanvanView["src/basesKanvanView/"]
+        register["register-view.ts<br/>registerKanbanView()"]
+        viewOptions["view-options.ts<br/>createKanbanViewOptions()"]
         propType["property-type.ts<br/>isListProperty()"]
+        view["view.ts<br/>KanbanBasesView"]
+        render["render.ts<br/>renderKanbanBoard()"]
+    end
+
+    subgraph Core["src/core/"]
         constants["constants.ts<br/>KANBAN_VIEW_TYPE, KANBAN_OPTION_KEYS,<br/>NO_COLUMN_ID, NO_COLUMN_LABEL"]
-        view["kanban-view.ts<br/>KanbanBasesView"]
-        grouping["kanban-grouping.ts<br/>buildKanbanColumns()"]
-        taskStats["task-stats.ts<br/>getTaskStats()"]
-        render["kanban-render.ts<br/>renderKanbanBoard()"]
+        columns["columns.ts<br/>buildKanbanColumns()"]
+        taskStats["task-stats.ts<br/>getTaskStats(listItems)"]
     end
 
     subgraph ObsidianAPI["Obsidian API surface (host app — expected, not implemented here)"]
@@ -152,16 +168,15 @@ flowchart TD
     view -.->|imports| constants
     view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get('columnOrder')"| ObsBasesViewConfig
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
-    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder)"| grouping
+    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder)"| columns
     view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn)"| render
-    view -->|"getTaskStats(app, file)"| taskStats
+    view -->|"app.metadataCache.getFileCache(file)?.listItems ?? []"| ObsMetadataCache
+    view -->|"getTaskStats(listItems)"| taskStats
     view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
     view -->|"this.app.metadataCache.on('changed', cb)"| ObsMetadataCache
 
-    grouping -.->|imports| constants
-    grouping -->|"entry.getValue(groupProperty) : Value"| ObsBasesEntry
-
-    taskStats -->|"app.metadataCache.getFileCache(file)"| ObsMetadataCache
+    columns -.->|imports| constants
+    columns -->|"entry.getValue(groupProperty) : Value"| ObsBasesEntry
 
     render -->|"onOpenFile(entry.file: TFile)"| ObsTFile
     render -->|"new Sortable(cardsEl, { disabled: true })"| Sortable
@@ -177,7 +192,10 @@ per-view `BasesViewConfig` (`get`/`getAsPropertyId`) and `BasesQueryResult`
 (`this.data.data`) objects supplied by the Bases engine on every render; `BasesEntry`
 objects with `getValue()`; `App.workspace` and `App.metadataCache` (both public API); the
 `parsePropertyId()` helper and `TFile` type; and, as the one undocumented exception,
-`App.metadataTypeManager` (see Known limitations below).
+`App.metadataTypeManager` (see Known limitations below). `src/core/task-stats.ts` is
+deliberately absent from that list — `view.ts` resolves the Obsidian-specific
+`app.metadataCache.getFileCache(file)?.listItems` lookup itself and passes plain
+`ListItemCache[]` data in, so `core/` has zero Obsidian API dependencies.
 
 ## Data flow
 

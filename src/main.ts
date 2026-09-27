@@ -1,5 +1,5 @@
 import { Plugin } from 'obsidian';
-import { registerKanbanView } from './bases/register-kanban-view';
+import { registerKanbanView } from './basesKanvanView/register-view';
 
 export default class ClarPlugin extends Plugin {
 	async onload() {

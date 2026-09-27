@@ -1,7 +1,7 @@
 import type { Plugin } from 'obsidian';
-import { KANBAN_VIEW_TYPE } from './constants';
-import { KanbanBasesView } from './kanban-view';
-import { createKanbanViewOptions } from './kanban-view-options';
+import { KANBAN_VIEW_TYPE } from '../core/constants';
+import { KanbanBasesView } from './view';
+import { createKanbanViewOptions } from './view-options';
 
 export function registerKanbanView(plugin: Plugin): void {
 	const registered = plugin.registerBasesView(KANBAN_VIEW_TYPE, {
