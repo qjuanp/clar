@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import process from 'process';
+import { existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 
 const banner = `/*
@@ -9,6 +10,15 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = process.argv[2] === 'production';
+const outDir = 'dist';
+
+function copyStaticFiles() {
+	mkdirSync(outDir, { recursive: true });
+	copyFileSync('manifest.json', `${outDir}/manifest.json`);
+	if (existsSync('styles.css')) {
+		copyFileSync('styles.css', `${outDir}/styles.css`);
+	}
+}
 
 const context = await esbuild.context({
 	banner: {
@@ -37,8 +47,16 @@ const context = await esbuild.context({
 	logLevel: 'info',
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,
-	outfile: 'main.js',
+	outfile: `${outDir}/main.js`,
 	minify: prod,
+	plugins: [
+		{
+			name: 'copy-static-files',
+			setup(build) {
+				build.onEnd(copyStaticFiles);
+			},
+		},
+	],
 });
 
 if (prod) {

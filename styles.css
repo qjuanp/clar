@@ -1,8 +1,50 @@
 /*
-
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
+Minimal layout only for the Kanban Board Bases view — styling is out of
+scope for this pass, these rules just make columns/cards legible.
 */
+
+.clar-kanban-view {
+	height: 100%;
+	overflow-x: auto;
+}
+
+.clar-kanban-board {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 12px;
+	height: 100%;
+	padding: 8px;
+}
+
+.clar-kanban-column {
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 220px;
+	max-height: 100%;
+}
+
+.clar-kanban-column__title {
+	font-weight: 600;
+	margin-bottom: 6px;
+}
+
+.clar-kanban-column__cards {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	overflow-y: auto;
+}
+
+.clar-kanban-card {
+	padding: 6px 8px;
+	border: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+.clar-kanban-empty {
+	padding: 8px;
+	color: var(--text-muted);
+}

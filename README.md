@@ -1,17 +1,11 @@
-# Obsidian Sample Plugin
+# Clár
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An Obsidian plugin that adds a **Kanban Board** view for [Bases](https://docs.obsidian.md/plugins/guides/bases-view), grouping a base's filtered notes into columns by a chosen list-type frontmatter property.
 
 This project uses TypeScript to provide type checking and documentation.
 The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and outputs a Notice on click.
-- Registers a global interval which logs 'setInterval' to the console.
+See [`docs/architecture.md`](docs/architecture.md) for how the view is implemented, and [`docs/dev.md`](docs/dev.md) for manual testing steps in a real vault.
 
 ## First time developing plugins?
 
