@@ -1,9 +1,10 @@
-import { BasesView, type QueryController, type TFile } from 'obsidian';
+import { BasesView, Notice, TFile, type QueryController } from 'obsidian';
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
 import { buildKanbanColumns } from './columns';
 import { getTaskStats } from './task-stats';
 import { renderKanbanBoard } from './render';
+import { updateEntryColumn } from './update-column';
 
 function parseColumnOrder(rawValue: unknown): string[] {
 	if (typeof rawValue !== 'string') {
@@ -58,6 +59,7 @@ export class KanbanBasesView extends BasesView {
 			columns,
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
+			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
 		);
 	}
 
@@ -68,6 +70,18 @@ export class KanbanBasesView extends BasesView {
 
 	private openFile(file: TFile): void {
 		void this.app.workspace.getLeaf(false).openFile(file);
+	}
+
+	private onCardMoved(path: string, targetColumnLabel: string): void {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		const groupProperty = this.config.getAsPropertyId(KANBAN_OPTION_KEYS.GROUP_PROPERTY);
+		if (!(file instanceof TFile) || !groupProperty) {
+			return;
+		}
+		updateEntryColumn(this.app, file, groupProperty, targetColumnLabel).catch((err: unknown) => {
+			console.error('[Clár] Failed to update column for', path, err);
+			new Notice('Clár: could not move card — see console for details');
+		});
 	}
 
 	private destroySortables(): void {

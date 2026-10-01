@@ -2,16 +2,19 @@ import Sortable from 'sortablejs';
 import type { TFile } from 'obsidian';
 import type { KanbanColumn } from './columns';
 import type { TaskStats } from './task-stats';
+import { NO_COLUMN_ID } from './constants';
 
 /**
- * Rebuilds the board from scratch on every call. No diffing is needed since
- * there is no drag-and-drop yet, just re-rendering the current query result.
+ * Rebuilds the board from scratch on every call. Drag-and-drop moves are
+ * reported via `onCardMoved`; the next `onDataUpdated()` re-render (driven by
+ * the resulting frontmatter change) is what reconciles the DOM afterwards.
  */
 export function renderKanbanBoard(
 	boardEl: HTMLElement,
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
 	getTaskStats: (file: TFile) => TaskStats | null,
+	onCardMoved: (path: string, targetColumnLabel: string) => void,
 ): Sortable[] {
 	boardEl.empty();
 
@@ -30,8 +33,10 @@ export function renderKanbanBoard(
 		columnEl.createDiv({ cls: 'clar-kanban-column__title', text: column.label });
 
 		const cardsEl = columnEl.createDiv({ cls: 'clar-kanban-column__cards' });
+		cardsEl.dataset.columnLabel = column.label;
 		for (const entry of column.entries) {
 			const cardEl = cardsEl.createDiv({ cls: 'clar-kanban-card' });
+			cardEl.dataset.path = entry.file.path;
 			cardEl.createDiv({ cls: 'clar-kanban-card__title', text: entry.file.basename });
 
 			const stats = getTaskStats(entry.file);
@@ -50,9 +55,34 @@ export function renderKanbanBoard(
 			cardEl.addEventListener('click', () => onOpenFile(entry.file));
 		}
 
-		// SortableJS is wired in as the stated foundation but intentionally inert:
-		// no drag-and-drop yet, this pass only renders the board.
-		sortables.push(new Sortable(cardsEl, { disabled: true }));
+		// "No column" can't `put` (accept drops): it isn't a real property value,
+		// so a card dropped there would have nothing meaningful to write. It can
+		// still `pull` (be dragged from), since a card with no value should be
+		// movable into a real column. `forceFallback` makes SortableJS drive the
+		// drag off plain pointer events instead of native HTML5 DnD, which is
+		// both more consistent across platforms and reliably driveable in e2e tests.
+		sortables.push(
+			new Sortable(cardsEl, {
+				group:
+					column.id === NO_COLUMN_ID
+						? { name: 'clar-kanban-cards', put: false }
+						: 'clar-kanban-cards',
+				animation: 0,
+				forceFallback: true,
+				fallbackTolerance: 3,
+				onEnd: (evt) => {
+					if (evt.from === evt.to) {
+						return;
+					}
+					const path = evt.item.dataset.path;
+					const targetColumnLabel = evt.to.dataset.columnLabel;
+					if (!path || targetColumnLabel === undefined) {
+						return;
+					}
+					onCardMoved(path, targetColumnLabel);
+				},
+			}),
+		);
 	}
 
 	return sortables;

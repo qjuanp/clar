@@ -1,0 +1,7 @@
+filters:
+  and:
+    - file.inFolder("Projects")
+views:
+  - type: clar-kanban
+    name: Unordered board
+    groupProperty: note.status

@@ -41,7 +41,11 @@ scope for this pass, these rules just make columns/cards legible.
 	border: 1px solid var(--background-modifier-border);
 	background-color: var(--background-primary);
 	border-radius: var(--radius-s);
-	cursor: pointer;
+	cursor: grab;
+}
+
+.sortable-ghost {
+	opacity: 0.4;
 }
 
 .clar-kanban-card__title {

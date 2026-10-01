@@ -1,269 +1,184 @@
-# Obsidian community plugin
+# Clár — Obsidian Kanban Board for Bases
 
 ## Project overview
 
-- Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
-- Entry point: `src/main.ts` compiled to `main.js` and loaded by Obsidian.
-- Required release artifacts: `main.js`, `manifest.json`, and optional `styles.css`.
+Clár is an Obsidian community plugin that adds a custom **Bases** view type
+(`clar-kanban`, "Kanban board"). It groups a base's already-filtered notes into
+columns by a chosen list-type frontmatter property and lets cards be dragged
+between columns, writing the target column's value back into the note's
+frontmatter on drop.
 
-## Environment & tooling
+- Entry point: `src/main.ts` → `ClarPlugin` (minimal — just calls
+  `registerKanbanView(this)` from `src/basesKanvanView/register-view.ts`).
+- Bundled to `main.js` via esbuild; release artifacts are `main.js`,
+  `manifest.json`, `styles.css` at the plugin root (never commit `main.js` or
+  `dist/`, both are gitignored).
+- `src/settings.ts` is **unused leftover scaffolding** from the sample-plugin
+  template (`main.ts` never references it). It's the source of the two
+  pre-existing `obsidianmd/sample-names` lint errors — don't try to "fix" them
+  by renaming in place unless you're actually wiring up a settings tab; if the
+  file is truly dead, deleting it is more honest than patching around it.
 
-- Node.js: use current LTS (Node 18+ recommended).
-- **Package manager: npm** (required for this sample - `package.json` defines npm scripts and dependencies).
-- **Bundler: esbuild** (required for this sample - `esbuild.config.mjs` and build scripts depend on it). Alternative bundlers like Rollup or webpack are acceptable for other projects if they bundle all external dependencies into `main.js`.
-- Types: `obsidian` type definitions.
+Full design docs: [`docs/architecture.md`](docs/architecture.md) (module-by-module
+breakdown + a dependency diagram) and [`docs/dev.md`](docs/dev.md) (manual test
+walkthrough in a real vault).
 
-**Note**: This sample project has specific technical dependencies on npm and esbuild. If you're creating a plugin from scratch, you can choose different tools, but you'll need to replace the build configuration accordingly.
+## Architecture & module layout
 
-### Install
+Everything view-specific lives flat under `src/basesKanvanView/` (despite
+`docs/architecture.md` and `docs/specs/3_refactor.md` describing a `src/core/`
+split for the pure logic — that move was never actually done; treat the doc's
+description of the split as aspirational, not current, until someone executes
+it for real):
+
+| File | Responsibility |
+|---|---|
+| `constants.ts` | View type id, config option keys, "No column" id/label |
+| `columns.ts` | Pure: groups `BasesEntry[]` into `KanbanColumn[]` by a property's first list value |
+| `task-stats.ts` | Pure: active-task count + rounded progress % from `ListItemCache[]` |
+| `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
+| `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
+| `view-options.ts` | Declares the two Bases view-config controls (column property, column order) |
+| `register-view.ts` | `Plugin.registerBasesView(...)` registration |
+| `render.ts` | DOM rendering + SortableJS wiring (drag-and-drop between columns) |
+| `view.ts` | `KanbanBasesView extends BasesView` — orchestrates data → columns → render, drop handling, click-to-open |
+
+Column derivation reads only the **first item** of a list-type property per
+note (`columns.ts`'s `resolveColumnLabel`) — this is a deliberate, documented
+simplification, not a bug. Writing back on drop replaces the whole array with
+a single-item `[newLabel]`, matching that read model.
+
+## Development workflow (spec-driven)
+
+Features in this repo are driven by numbered specs in `docs/specs/*.md`
+(`1_base-kanban-board.md`, `2_card-task-details.md`, `5_drag-and-drop.md`,
+etc.). When asked to implement something covered by one of these:
+
+1. Read the spec file fully — it usually has its own "Development Process"
+   section spelling out the expected order of work (plan → implement → run
+   the full existing test suite and fix regressions before adding new tests →
+   add new tests for the feature → final full validation pass).
+2. Present an implementation plan before writing code if the spec asks for
+   one (most do).
+3. After implementing, run **both** `npm run test:unit` and `npm run
+   test:e2e` (or `npm test` for both) — not just unit tests — before calling
+   the work done. If existing tests break, stop and present a fix plan rather
+   than patching around the failure silently.
+4. Update `docs/architecture.md` and `docs/dev.md` when the change affects
+   what they describe — both have drifted from the code before (see the
+   `src/core/` split above); don't let that happen again for changes you make.
+
+## Environment & commands
+
+- **Node version matters.** CI lints/unit-tests on Node 20.x/22.x/24.x and
+  runs e2e only on 24.x. If the active shell's `node --version` is older
+  (some environments default to an old Node from a version manager — Node 16
+  has been seen in the wild here — `vitest`/`vite` then fail outright with a
+  `node:fs/promises` import error), switch to a supported version first,
+  e.g. with nvm:
+  ```bash
+  source ~/.nvm/nvm.sh && nvm use 24
+  ```
+- Package manager: npm (`package-lock.json` is committed).
 
 ```bash
-npm install
+npm install                # install deps
+npm run dev                # esbuild watch mode
+npm run build               # tsc -noEmit + production esbuild bundle
+npm run lint                # eslint . (eslint-plugin-obsidianmd)
+npm run test:unit           # vitest run — src/**/*.test.ts
+npm run test:e2e            # npm run build && wdio run ./wdio.conf.mts
+npm test                    # test:unit && test:e2e
+npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian/plugins/clar
 ```
-
-### Dev (watch)
-
-```bash
-npm run dev
-```
-
-### Production build
-
-```bash
-npm run build
-```
-
-## Linting
-
-- ESLint is preconfigured with `eslint-plugin-obsidianmd` for Obsidian-specific rules.
-- Run `npm run lint` to lint the project.
-- A GitHub Action automatically lints every commit on all branches.
-
-## File & folder conventions
-
-- **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
-- Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
-- **Example file structure**:
-    ```
-    src/
-      main.ts           # Plugin entry point, lifecycle management
-      settings.ts       # Settings interface and defaults
-      commands/         # Command implementations
-        command1.ts
-        command2.ts
-      ui/              # UI components, modals, views
-        modal.ts
-        view.ts
-      utils/           # Utility functions, helpers
-        helpers.ts
-        constants.ts
-      types.ts         # TypeScript interfaces and types
-    ```
-- **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
-- Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
-- Generated output should be placed at the plugin root or `dist/` depending on your build setup. Release artifacts must end up at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
-
-## Manifest rules (`manifest.json`)
-
-- Must include (non-exhaustive):
-    - `id` (plugin ID; for local dev it should match the folder name)
-    - `name`
-    - `version` (Semantic Versioning `x.y.z`)
-    - `minAppVersion`
-    - `description`
-    - `isDesktopOnly` (boolean)
-    - Optional: `author`, `authorUrl`, `fundingUrl` (string or map)
-- Never change `id` after release. Treat it as stable API.
-- Keep `minAppVersion` accurate when using newer APIs.
-- Canonical requirements are coded here: https://github.com/obsidianmd/obsidian-releases/blob/master/.github/workflows/validate-plugin-entry.yml
 
 ## Testing
 
-- Manual install for testing: copy `main.js`, `manifest.json`, `styles.css` (if any) to:
-    ```
-    <Vault>/.obsidian/plugins/<plugin-id>/
-    ```
-- Reload Obsidian and enable the plugin in **Settings → Community plugins**.
+### Unit tests (Vitest)
 
-## Commands & settings
+- Colocated with source: `src/basesKanvanView/*.test.ts`, not under `test/`.
+- `obsidian` is aliased in `vitest.config.ts` to `test/unit/mocks/obsidian.ts`
+  — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
+  `StringValue` (the real `obsidian` package ships types only, no runtime).
+- Only pure logic is unit tested (`columns.ts`, `task-stats.ts`,
+  `update-column.ts`'s `buildFrontmatterListValue`). Anything that needs a
+  live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
+  `processFrontMatter` call) is covered by e2e instead — don't try to force
+  Obsidian API mocks into the unit layer for that.
+- Pattern for faking a `BasesEntry`: `{ getValue: () => value } as unknown as
+  BasesEntry` (see `columns.test.ts`) — these functions never touch
+  `entry.file`, only `entry.getValue()`.
 
-- Any user-facing commands should be added via `this.addCommand(...)`.
-- If the plugin has configuration, provide a settings tab and sensible defaults.
-- Persist settings using `this.loadData()` / `this.saveData()`.
-- Use stable command IDs; avoid renaming once released.
+### E2E tests (WDIO Obsidian Service)
 
-## Versioning & releases
+- `test/e2e/specs/**/*.e2e.ts`, mocha + `@wdio/globals`, driven against a
+  real, latest-version Obsidian instance.
+- Fixture vault at `test/e2e/vaults/kanban/` is copied to a temp dir per test
+  run via `obsidianPage.resetVault()` in `beforeEach` — the seed vault itself
+  must never be mutated by a test.
+- Shared helpers live in `test/e2e/support/kanban-board.ts`: `openBase(path)`,
+  `readBoard()` (DOM → `BoardColumn[]`), `dragCardToColumn(cardTitle,
+  columnLabel)`, `readFrontmatterProperty(path, prop)`, `readBoardTolerant()`.
+- `docs/specs/4_testing.md` states which specs are in e2e scope — update its
+  list when adding e2e coverage for a new spec.
 
-- Bump `version` in `manifest.json` (SemVer) and update `versions.json` to map plugin version → minimum app version.
-- Create a GitHub release whose tag exactly matches `manifest.json`'s `version`. Do not use a leading `v`.
-- Attach `manifest.json`, `main.js`, and `styles.css` (if present) to the release as individual assets.
-- After the initial release, follow the process to add/update your plugin in the community catalog as required.
+### E2E gotchas learned the hard way
 
-## Security, privacy, and compliance
+- **Simulating drag-and-drop**: WebdriverIO's built-in `element.dragAndDrop()`
+  jumps straight from source to target in one move — too abrupt for
+  SortableJS's `forceFallback: true` mode (which drives drags off plain
+  pointer events, not native HTML5 DnD, specifically because native DnD is
+  unreliable to simulate via WebDriver) to register as a drag at all. Use a
+  manual `browser.action('pointer')` sequence with a small in-place move
+  first (past `fallbackTolerance`) before the real move to the target — see
+  `dragCardToColumn` in `kanban-board.ts` for the working sequence.
+- **Stale elements after a drop**: a successful drop triggers an async
+  frontmatter write, which triggers a full board re-render (destroying and
+  recreating every DOM node). Reading the board concurrently (e.g. via
+  `.map()` over many elements at once, like `readBoard()` does) right after a
+  drop can hit a burst of simultaneous "stale element" errors that appear to
+  **wedge the WebDriver session for the rest of a `waitUntil` timeout**
+  (only one polling attempt ever completes, then a hang). Prefer verifying
+  through the Obsidian API directly where possible (e.g.
+  `readFrontmatterProperty`, no DOM involved) rather than polling the DOM
+  immediately after an action that's expected to trigger a re-render.
+  `readBoardTolerant()` reads sequentially (one command in flight at a time)
+  and returns `null` on staleness for the cases where a DOM check is still
+  needed.
+- A brief visual "flicker" after a drop (card briefly back in its old column
+  before the frontmatter write lands) is an accepted, documented limitation —
+  don't try to eliminate it by polling harder; see `docs/architecture.md`'s
+  Known limitations section.
 
-Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particular:
+## Linting & code style
 
-- Default to local/offline operation. Only make network requests when essential to the feature.
-- No hidden telemetry. If you collect optional analytics or call third-party services, require explicit opt-in and document clearly in `README.md` and in settings.
-- Never execute remote code, fetch and eval scripts, or auto-update plugin code outside of normal releases.
-- Minimize scope: read/write only what's necessary inside the vault. Do not access files outside the vault.
-- Clearly disclose any external services used, data sent, and risks.
-- Respect user privacy. Do not collect vault contents, filenames, or personal information unless absolutely necessary and explicitly consented.
-- Avoid deceptive patterns, ads, or spammy notifications.
-- Register and clean up all DOM, app, and interval listeners using the provided `register*` helpers so the plugin unloads safely.
+- `npm run lint` runs ESLint with `eslint-plugin-obsidianmd`'s recommended
+  config (flat config, `eslint.config.mts`).
+- Style already in the codebase: tabs for indentation, single quotes,
+  semicolons, `interface` for object shapes (`KanbanColumn`, `TaskStats`,
+  etc.), and `import type { ... }` for type-only imports. Match existing
+  files rather than introducing a new style.
+- `src/settings.ts` has two known pre-existing lint errors
+  (`obsidianmd/sample-names`) from unused template scaffolding — don't spend
+  time "fixing" these unless you're specifically asked to wire up settings;
+  they're not caused by your changes and aren't a regression signal.
+- Don't disable rules or add `--no-verify`/ignore comments to work around a
+  failure without understanding why it's failing first.
 
-## UX & copy guidelines (for UI text, commands, settings)
+## Manifest & versioning
 
-- Prefer sentence case for headings, buttons, and titles.
-- Use clear, action-oriented imperatives in step-by-step copy.
-- Use **bold** to indicate literal UI labels. Prefer "select" for interactions.
-- Use arrow notation for navigation: **Settings → Community plugins**.
-- Keep in-app strings short, consistent, and free of jargon.
-
-## Performance
-
-- Keep startup light. Defer heavy work until needed.
-- Avoid long-running tasks during `onload`; use lazy initialization.
-- Batch disk access and avoid excessive vault scans.
-- Debounce/throttle expensive operations in response to file system events.
-
-## Coding conventions
-
-- TypeScript with `"strict": true` preferred.
-- **Keep `main.ts` minimal**: Focus only on plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
-- **Split large files**: If any file exceeds ~200-300 lines, consider breaking it into smaller, focused modules.
-- **Use clear module boundaries**: Each file should have a single, well-defined responsibility.
-- Bundle everything into `main.js` (no unbundled runtime deps).
-- Avoid Node/Electron APIs if you want mobile compatibility; set `isDesktopOnly` accordingly.
-- Prefer `async/await` over promise chains; handle errors gracefully.
-
-## Mobile
-
-- Where feasible, test on iOS and Android.
-- Don't assume desktop-only behavior unless `isDesktopOnly` is `true`.
-- Avoid large in-memory structures; be mindful of memory and storage constraints.
-
-## Agent do/don't
-
-**Do**
-
-- Add commands with stable IDs (don't rename once released).
-- Provide defaults and validation in settings.
-- Write idempotent code paths so reload/unload doesn't leak listeners or intervals.
-- Use `this.register*` helpers for everything that needs cleanup.
-
-**Don't**
-
-- Introduce network calls without an obvious user-facing reason and documentation.
-- Ship features that require cloud services without clear disclosure and explicit opt-in.
-- Store or transmit vault contents unless essential and consented.
-
-## Common tasks
-
-### Organize code across multiple files
-
-**main.ts** (minimal, lifecycle only):
-
-```ts
-import { Plugin } from 'obsidian';
-import { MySettings, DEFAULT_SETTINGS } from './settings';
-import { registerCommands } from './commands';
-
-export default class MyPlugin extends Plugin {
-	settings!: MySettings;
-
-	async onload() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MySettings>,
-		);
-		registerCommands(this);
-	}
-}
-```
-
-**settings.ts**:
-
-```ts
-export interface MySettings {
-	enabled: boolean;
-	apiKey: string;
-}
-
-export const DEFAULT_SETTINGS: MySettings = {
-	enabled: true,
-	apiKey: '',
-};
-```
-
-**commands/index.ts**:
-
-```ts
-import { Plugin } from 'obsidian';
-import { doSomething } from './my-command';
-
-export function registerCommands(plugin: Plugin) {
-	plugin.addCommand({
-		id: 'do-something',
-		name: 'Do something',
-		callback: () => doSomething(plugin),
-	});
-}
-```
-
-### Add a command
-
-```ts
-this.addCommand({
-	id: 'your-command-id',
-	name: 'Do the thing',
-	callback: () => this.doTheThing(),
-});
-```
-
-### Persist settings
-
-```ts
-interface MySettings { enabled: boolean }
-const DEFAULT_SETTINGS: MySettings = { enabled: true };
-
-async onload() {
-  this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MySettings>);
-  await this.saveData(this.settings);
-}
-```
-
-### Register listeners safely
-
-```ts
-this.registerEvent(
-	this.app.workspace.on('file-open', (f) => {
-		/* ... */
-	}),
-);
-this.registerDomEvent(activeWindow, 'resize', () => {
-	/* ... */
-});
-this.registerInterval(
-	window.setInterval(() => {
-		/* ... */
-	}, 1000),
-);
-```
-
-## Troubleshooting
-
-- Plugin doesn't load after build: ensure `main.js` and `manifest.json` are at the top level of the plugin folder under `<Vault>/.obsidian/plugins/<plugin-id>/`.
-- Build issues: if `main.js` is missing, run `npm run build` or `npm run dev` to compile your TypeScript source code.
-- Commands not appearing: verify `addCommand` runs after `onload` and IDs are unique.
-- Settings not persisting: ensure `loadData`/`saveData` are awaited and you re-render the UI after changes.
-- Mobile-only issues: confirm you're not using desktop-only APIs; check `isDesktopOnly` and adjust.
+- `manifest.json`: `id: "clar"`, `minAppVersion: "1.10.0"` (required for the
+  Bases plugin-facing view API) — bump this if a change depends on a newer
+  Obsidian API.
+- Bump `version` (SemVer) in `manifest.json`/`package.json` and add an entry
+  to `versions.json` mapping plugin version → minimum Obsidian version before
+  a release. `npm version patch|minor|major` automates this.
+- Never rename the plugin `id` after release.
 
 ## References
 
-- Obsidian sample plugin: https://github.com/obsidianmd/obsidian-sample-plugin
-- API documentation: https://docs.obsidian.md
-- Developer policies: https://docs.obsidian.md/Developer+policies
+- Obsidian Bases view API: https://docs.obsidian.md/plugins/guides/bases-view
+- Obsidian API docs: https://docs.obsidian.md
 - Plugin guidelines: https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
-- Style guide: https://help.obsidian.md/style-guide
+- SortableJS: https://sortablejs.github.io/Sortable/
+- WDIO Obsidian Service: https://github.com/jesse-r-s-hines/wdio-obsidian-service

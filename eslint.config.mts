@@ -14,6 +14,11 @@ export default defineConfig(
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
+		'vitest.config.ts',
+		'wdio.conf.mts',
+		'test/unit/mocks/**',
+		'test/e2e/vaults/**',
+		'.obsidian-cache/**',
 	]),
 	{
 		languageOptions: {
