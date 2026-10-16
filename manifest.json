@@ -4,8 +4,8 @@
 	"version": "0.1.0",
 	"minAppVersion": "1.10.0",
 	"description": "Adds a Kanban Board view for Obsidian Bases.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"author": "@qjuanp",
+	"authorUrl": "https://qjuanp.dev",
+	"fundingUrl": "https://github.com/sponsors/qjuanp",
 	"isDesktopOnly": false
 }
