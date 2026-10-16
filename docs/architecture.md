@@ -23,10 +23,13 @@ Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options
 means the core Bases plugin isn't enabled in the vault.
 
 ### `src/basesKanvanView/view-options.ts`
-Builds the two view-configuration controls exposed in the Bases toolbar, per the spec:
+Builds the three view-configuration controls exposed in the Bases toolbar, per the specs:
 - **Column property** — a `BasesPropertyOption` ("property" dropdown) filtered via
   `isListProperty()` so only list-type frontmatter properties are selectable.
 - **Column order** — a `BasesTextOption` for a comma-separated list defining column order.
+- **Show task list** — a `BasesToggleOption` (`showTaskList`, `default: true`) turning the
+  per-card collapsible task list (spec 6) on or off. `config.get()` returns `undefined`
+  for a never-touched option, so the view treats only an explicit `false` as "off".
 
 There is **no custom "view name" option**. `BasesViewConfig.name` already gives every
 Bases view (of any type) a user-editable name generically through Bases' own view
@@ -68,8 +71,23 @@ plugins that use custom status characters). Returns `null` when the note has no 
 all, otherwise `{ active, progressPercent }` with
 `progressPercent = Math.round(completed / total * 100)` (standard rounding, not ceiling).
 
+### `src/basesKanvanView/task-list.ts`
+Pure, no DOM, no `App`/`TFile` — unit tested in `task-list.test.ts`.
+- `buildTaskTree(listItems, content)` turns a note's `ListItemCache[]` plus its raw text
+  into a `TaskNode[]` tree (`{ line, status, text, children }`). Only items with a defined
+  `task` are kept, sorted by `position.start.line` so siblings stay in file order. Nesting
+  follows `ListItemCache.parent` (the parent item's start line; negative for roots). A
+  task nested under a plain, non-task bullet hangs off its nearest *task* ancestor, or
+  becomes a root if there is none, so no task is ever dropped. Because a list starting on
+  line 0 makes a root's `parent` (`-0`) indistinguishable from "child of line 0", a
+  parent link is only trusted when the parent line is also less indented. `text` is the
+  task's own line with the list marker and `[ ]` stripped (`-`, `*`, `+`, `1.`, `1)`).
+- `setTaskStatusInContent(content, line, done)` rewrites just the checkbox character on
+  that line (`x` or space), preserving indentation and text. It returns `null` if the
+  line no longer looks like a task, so a stale toggle aborts instead of corrupting the note.
+
 ### `src/basesKanvanView/render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, onCardMoved)` clears and
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, onCardMoved, taskList)` clears and
 rebuilds the board from scratch on every call. Renders one `.clar-kanban-column` per
 column with a title and a card list; one `.clar-kanban-card` per entry with a
 `.clar-kanban-card__title` (`entry.file.basename`) and, only when
@@ -89,6 +107,20 @@ makes SortableJS drive the drag off plain pointer events instead of native HTML5
 persisted); otherwise it reads `data-path`/`data-column-label` straight off the DOM and
 calls `onCardMoved(path, targetColumnLabel)`. Returns the created `Sortable` instances so
 the view can destroy them before the next render.
+
+**Task list section (spec 6).** When `taskList` (a `TaskListRenderOptions`) is non-null
+and the note has tasks, each card gets a `.clar-kanban-card__tasks` footer below the meta
+block. The footer holds a `.clar-kanban-card__tasks-toggle` button ("▸ Show tasks" /
+"▾ Hide tasks", with `aria-expanded`) and a `.clar-kanban-card__tasks-list` body that
+carries `is-collapsed` while closed. The body is filled lazily: `taskList.renderTaskList(file,
+listEl)` is called only when the card is expanded, so collapsed cards never read their
+file or render markdown. Whether a card is expanded comes from `taskList.isExpanded(path)`
+and is reported back via `onToggleExpanded`. The state lives in the view because every
+re-render rebuilds the DOM. The footer stops click propagation so that toggling, ticking,
+or following a link doesn't trigger the card's open-note handler. Each `Sortable` also gets
+`filter: '.clar-kanban-card__tasks'` with `preventOnFilter: false`, so pressing inside the
+section never starts a drag and checkboxes, links and the list's scrollbar keep working.
+The list's `max-height` (in `styles.css`) fits about 10 single-line tasks before it scrolls.
 
 ### `src/basesKanvanView/update-column.ts`
 `updateEntryColumn(app, file, groupProperty, newColumnLabel)` is the only place that
@@ -116,6 +148,28 @@ drag-and-drop drops. `onCardMoved` resolves the dropped file via
 `Notice` — there's no manual DOM revert on failure; the next metadata-driven re-render is
 what reconciles the DOM either way. `onunload()` destroys any tracked `Sortable`
 instances defensively.
+
+**Task list (spec 6).** Unless `showTaskList` is explicitly `false`, `onDataUpdated()`
+passes `TaskListRenderOptions` to `renderKanbanBoard()`:
+- `expandedTaskLists: Set<string>` holds the paths of expanded cards. It lives on the
+  view instance, so it survives the full re-render that follows every metadata change,
+  including the one a checkbox tick causes. It is not persisted, so closing the view
+  resets every card to collapsed.
+- `renderTaskList(file, listEl)` calls `app.vault.cachedRead(file)` and builds
+  `buildTaskTree(metadataCache.getFileCache(file).listItems, content)`. It renders nested
+  `ul.contains-task-list > li.task-list-item` rows, each with a checkbox and a
+  `.clar-kanban-task__text` that `MarkdownRenderer.render()` fills, so links, bold text
+  and tags render. After the async read it bails if a newer render has replaced the board.
+  Internal link clicks are delegated to `app.workspace.openLinkText(href, file.path)`.
+- **Render-children lifecycle:** `MarkdownRenderer.render()` needs a `Component` owner.
+  The view creates one child `Component` per render (`resetRenderComponent()`, called at
+  the top of `onDataUpdated()`) and removes the previous one, so markdown children from
+  old boards are unloaded instead of leaking. `onunload()` removes it too.
+- A checkbox `change` calls `setTaskDone()`, which runs `app.vault.process(file, ...)`
+  with `setTaskStatusInContent()`. If the line no longer matches, the content is left
+  untouched, the checkbox is reverted, and a `Notice` is shown. On success nothing else is
+  needed: the existing `metadataCache 'changed'` listener re-renders the board, updating
+  the list, the active-task count and the progress figure together.
 
 On its first call, `onDataUpdated()` also registers a
 `this.app.metadataCache.on('changed', ...)` listener (via `registerEvent`, one-time
@@ -149,6 +203,7 @@ flowchart TD
         view["view.ts<br/>KanbanBasesView"]
         render["render.ts<br/>renderKanbanBoard()"]
         updateColumn["update-column.ts<br/>updateEntryColumn()"]
+        taskList["task-list.ts<br/>buildTaskTree(), setTaskStatusInContent()"]
     end
 
     subgraph Core["src/core/"]
@@ -173,6 +228,8 @@ flowchart TD
         ObsFileManager["App.fileManager.processFrontMatter()"]
         ObsVault["App.vault.getAbstractFileByPath()"]
         ObsNotice["Notice"]
+        ObsVaultContent["App.vault.cachedRead() / process()"]
+        ObsMarkdownRenderer["MarkdownRenderer.render() + Component"]
     end
 
     subgraph External["External library"]
@@ -198,7 +255,7 @@ flowchart TD
     view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get('columnOrder')"| ObsBasesViewConfig
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
     view -->|"buildKanbanColumns(entries, groupProperty, columnOrder)"| columns
-    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, onCardMoved)"| render
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, onCardMoved, taskListOptions)"| render
     view -->|"app.metadataCache.getFileCache(file)?.listItems ?? []"| ObsMetadataCache
     view -->|"getTaskStats(listItems)"| taskStats
     view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
@@ -206,13 +263,16 @@ flowchart TD
     view -->|"onCardMoved(path, targetColumnLabel)"| ObsVault
     view -->|"updateEntryColumn(app, file, groupProperty, targetColumnLabel)"| updateColumn
     view -->|"new Notice(...) on failure"| ObsNotice
+    view -->|"buildTaskTree(listItems, content), setTaskStatusInContent(content, line, done)"| taskList
+    view -->|"cachedRead(file), process(file, fn)"| ObsVaultContent
+    view -->|"MarkdownRenderer.render(app, text, el, path, component)"| ObsMarkdownRenderer
 
     columns -.->|imports| constants
     columns -->|"entry.getValue(groupProperty) : Value"| ObsBasesEntry
 
     render -.->|imports| constants
     render -->|"onOpenFile(entry.file: TFile)"| ObsTFile
-    render -->|"new Sortable(cardsEl, { group, forceFallback: true, onEnd })"| Sortable
+    render -->|"new Sortable(cardsEl, { group, forceFallback: true, filter, onEnd })"| Sortable
 
     updateColumn -->|"parsePropertyId(groupProperty)"| ObsParsePropertyId
     updateColumn -->|"app.fileManager.processFrontMatter(file, fn)"| ObsFileManager
@@ -279,13 +339,24 @@ base" for free.
   is visually allowed (SortableJS's default) but is a no-op — no frontmatter write, and
   the very next unrelated re-render resorts cards back to `this.data.data`'s order.
 - **Automated tests.** `npm run test:unit` covers `columns.ts`/`task-stats.ts`/
-  `update-column.ts`'s pure logic directly; `npm run test:e2e` drives a real,
+  `task-list.ts`/`update-column.ts`'s pure logic directly; `npm run test:e2e` drives a real,
   latest-version Obsidian instance via WDIO Obsidian Service against the fixture vault
   in `test/e2e/vaults/kanban/` (copied to a temp dir per run), including drag-and-drop
-  coverage in `test/e2e/specs/drag-and-drop.e2e.ts` (drags are simulated via a manual
+  coverage in `test/e2e/specs/drag-and-drop.e2e.ts` and task-list coverage in
+  `test/e2e/specs/task-list.e2e.ts` (drags are simulated via a manual
   W3C Actions pointer sequence rather than WebdriverIO's built-in `dragAndDrop`, and
   `forceFallback: true` above is what makes that reliable against SortableJS). See
   [`specs/4_testing.md`](specs/4_testing.md) and [`dev.md`](dev.md).
+- **Task list: only a task's first line is shown.** Continuation lines of a multi-line
+  task item aren't included in its text. Ticking a task always writes `x`, and unticking
+  writes a space, so a custom status character (e.g. `[-]`) becomes `[ ]` once unticked.
+- **Task list: the footer is not a drag handle.** Pressing inside a card's task-list
+  section never starts a drag (see `render.ts`'s Sortable `filter`). Drag the card by its
+  title or meta area instead.
+- **Task list: expanded state is per view instance.** It is kept in memory, so it survives
+  re-renders but not closing and reopening the base. The e2e suite empties the leaf before
+  each spec-6 test for that reason: `obsidianPage.resetVault()` alone keeps the same view
+  instance, and its state, alive.
 - **Column-order matching is exact, case-sensitive string comparison** between the
   configured `columnOrder` text and each column's stringified property value; unmatched
   configured labels are silently dropped (no empty phantom columns are created).

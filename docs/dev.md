@@ -2,8 +2,9 @@
 
 ## Automated tests
 
-- `npm run test:unit` — fast unit tests for the pure grouping/task-stats logic
-  (`src/basesKanvanView/columns.ts`, `task-stats.ts`), no Obsidian instance needed.
+- `npm run test:unit` — fast unit tests for the pure grouping/task-stats/task-list logic
+  (`src/basesKanvanView/columns.ts`, `task-stats.ts`, `task-list.ts`), no Obsidian
+  instance needed.
 - `npm run test:e2e` — builds the plugin and runs the WDIO Obsidian Service suite
   (`test/e2e/specs/`) against a real, latest-version Obsidian instance, using the
   fixture vault at `test/e2e/vaults/kanban/` (copied to a temp dir per run — the
@@ -91,6 +92,17 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    and confirm the drop is rejected (the card stays where it was, frontmatter
    unchanged) — "No column" is a fallback bucket for notes missing the property, not a
    real value to write.
+9. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
+   a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
+   - Confirm each card with tasks shows a collapsed **▸ Show tasks** footer.
+   - Expand it. Confirm tasks appear in file order with their nesting, the link renders,
+     and the list scrolls past about 10 tasks.
+   - Clicking the toggle, a checkbox, or the list body must not open the note.
+   - Tick a box. Confirm the note's `[ ]` became `[x]` on disk, the active-task and
+     progress figures update, and the list stays expanded after the board refreshes.
+   - Click the link and confirm it opens the linked note.
+   - Drag the card by its title while the list is expanded and confirm it still moves.
+   - Turn **Show task list** off in the view options and confirm every footer disappears.
 
 ## Rebuild/reload loop
 
