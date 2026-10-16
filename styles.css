@@ -48,8 +48,8 @@ scope for this pass, these rules just make columns/cards legible.
 	opacity: 0.4;
 }
 
-.sortable-fallback {           /* or your fallbackClass */
-	rotate: 3deg;               /* use `rotate`, NOT `transform` */
+.sortable-fallback {
+	rotate: 3deg; /* `transform` is owned by SortableJS's inline positioning */
 	box-shadow: var(--shadow-l);
 	cursor: grabbing;
 }
@@ -63,6 +63,67 @@ scope for this pass, these rules just make columns/cards legible.
 	margin-top: 4px;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+}
+
+.clar-kanban-card__tasks {
+	margin-top: 6px;
+	padding-top: 4px;
+	border-top: 1px solid var(--background-modifier-border);
+	cursor: default;
+}
+
+.clar-kanban-card__tasks-toggle {
+	padding: 0 4px;
+	height: auto;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	background: none;
+	box-shadow: none;
+	cursor: pointer;
+}
+
+.clar-kanban-card__tasks-list {
+	/* Room for at least 10 single-line tasks, then scroll. */
+	max-height: calc(10 * 1.9em);
+	overflow-y: auto;
+	font-size: var(--font-ui-small);
+}
+
+.clar-kanban-card__tasks-list.is-collapsed {
+	display: none;
+}
+
+.clar-kanban-card__tasks-list ul {
+	margin: 0;
+	padding-inline-start: 0;
+	list-style: none;
+}
+
+.clar-kanban-card__tasks-list ul ul {
+	padding-inline-start: 1.2em;
+}
+
+.clar-kanban-task {
+	display: flex;
+	align-items: flex-start;
+	gap: 4px;
+	line-height: 1.9em;
+}
+
+.clar-kanban-task .task-list-item-checkbox {
+	flex: 0 0 auto;
+	margin: 0.45em 0 0;
+}
+
+.clar-kanban-task__text {
+	min-width: 0;
+	line-height: 1.5;
+	padding-top: 0.2em;
+	overflow-wrap: anywhere;
+}
+
+.clar-kanban-task__text p {
+	margin: 0;
 }
 
 .clar-kanban-empty {

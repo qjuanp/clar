@@ -21,5 +21,11 @@ export function createKanbanViewOptions(app: App): (config: BasesViewConfig) => 
 			displayName: 'Column order',
 			placeholder: 'e.g. Todo, Doing, Done',
 		},
+		{
+			type: 'toggle',
+			key: KANBAN_OPTION_KEYS.SHOW_TASK_LIST,
+			displayName: 'Show task list',
+			default: true,
+		},
 	];
 }

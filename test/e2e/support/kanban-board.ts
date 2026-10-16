@@ -192,3 +192,108 @@ export async function readFrontmatterProperty(path: string, propertyName: string
 		return (cache?.frontmatter?.[prop] ?? null) as unknown;
 	}, path, propertyName);
 }
+
+export interface TaskListItem {
+	text: string;
+	checked: boolean;
+	/** 0 for a root task, 1 for its subtasks, and so on. */
+	depth: number;
+}
+
+export interface TaskListSnapshot {
+	expanded: boolean;
+	scrollable: boolean;
+	items: TaskListItem[];
+}
+
+/**
+ * Snapshot of one card's task-list section, taken in a single in-page
+ * `execute` call (one WebDriver command, no per-element round-trips) so it
+ * can't hit the stale-element burst described on `readBoardTolerant()` while
+ * the board re-renders after a checkbox toggle. Returns null when the card,
+ * or its task-list section, isn't rendered.
+ */
+
+export async function readTaskList(cardTitle: string): Promise<TaskListSnapshot | null> {
+	return browser.execute((title) => {
+		const card = Array.from(document.querySelectorAll('.clar-kanban-card')).find(
+			(el) => el.querySelector('.clar-kanban-card__title')?.textContent === title,
+		);
+		const section = card?.querySelector('.clar-kanban-card__tasks');
+		const listEl = section?.querySelector<HTMLElement>('.clar-kanban-card__tasks-list');
+		if (!section || !listEl) {
+			return null;
+		}
+		const items = Array.from(listEl.querySelectorAll('li.task-list-item')).map((li) => {
+			let depth = 0;
+			for (let el = li.parentElement?.closest('li.task-list-item'); el; el = el.parentElement?.closest('li.task-list-item')) {
+				depth++;
+			}
+			return {
+				text: li.querySelector(':scope > .clar-kanban-task .clar-kanban-task__text')?.textContent?.trim() ?? '',
+				checked: li.querySelector<HTMLInputElement>(':scope > .clar-kanban-task input')?.checked ?? false,
+				depth,
+			};
+		});
+		return {
+			expanded: !listEl.classList.contains('is-collapsed'),
+			scrollable: listEl.scrollHeight > listEl.clientHeight,
+			items,
+		};
+	}, cardTitle);
+}
+
+/** Expands a card's task list via its toggle button; a no-op if it's already expanded. */
+export async function expandTaskList(cardTitle: string): Promise<void> {
+	const cardEl = await findCardElement(cardTitle);
+	const toggleEl = cardEl.$('.clar-kanban-card__tasks-toggle');
+	if ((await toggleEl.getAttribute('aria-expanded')) !== 'true') {
+		await toggleEl.click();
+	}
+}
+
+/**
+ * Empties every root leaf, so the next `openBase()` mounts a brand-new view.
+ * `obsidianPage.resetVault()` alone keeps the already-open Bases view (and
+ * its in-memory state, like which task lists are expanded) alive across tests.
+ */
+export async function closeAllViews(): Promise<void> {
+	await browser.executeObsidian(async ({ app }) => {
+		const leaves: { setViewState: (state: { type: string }) => Promise<void> }[] = [];
+		app.workspace.iterateRootLeaves((leaf) => {
+			leaves.push(leaf);
+		});
+		await Promise.all(leaves.map((leaf) => leaf.setViewState({ type: 'empty' })));
+	});
+}
+
+/** Clicks the checkbox of the task whose rendered text matches `taskText`, inside the given card. */
+export async function clickTaskCheckbox(cardTitle: string, taskText: string): Promise<void> {
+	const cardEl = await findCardElement(cardTitle);
+	for (const rowEl of await cardEl.$$('.clar-kanban-task').getElements()) {
+		// `textContent`, not `getText()`: the latter returns *rendered* text,
+		// which can differ (wrapping, whitespace) inside a narrow card.
+		const text = await rowEl.$('.clar-kanban-task__text').getProperty('textContent');
+		if (typeof text === 'string' && text.trim() === taskText) {
+			await rowEl.$('input[type="checkbox"]').click();
+			return;
+		}
+	}
+	throw new Error(`Task "${taskText}" not found in card "${cardTitle}"`);
+}
+
+/** Reads a note's raw contents via the Obsidian vault API (no DOM involved). */
+export async function readNote(path: string): Promise<string> {
+	return browser.executeObsidian(async ({ app }, notePath) => {
+		const file = app.vault.getFileByPath(notePath);
+		if (!file) {
+			throw new Error(`Expected a file at "${notePath}"`);
+		}
+		return app.vault.read(file);
+	}, path);
+}
+
+/** The path of the note currently open in the active leaf, or null. */
+export async function activeFilePath(): Promise<string | null> {
+	return browser.executeObsidian(({ app }) => app.workspace.getActiveFile()?.path ?? null);
+}

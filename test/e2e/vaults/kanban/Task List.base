@@ -1,0 +1,8 @@
+filters:
+  and:
+    - file.inFolder("Tasks")
+views:
+  - type: clar-kanban
+    name: Task list board
+    groupProperty: note.status
+    columnOrder: "todo, in-progress"

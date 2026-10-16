@@ -1,0 +1,8 @@
+filters:
+  and:
+    - file.inFolder("Tasks")
+views:
+  - type: clar-kanban
+    name: Task list hidden
+    groupProperty: note.status
+    showTaskList: false
