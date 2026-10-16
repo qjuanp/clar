@@ -70,6 +70,7 @@ export function renderKanbanBoard(
 				animation: 150,
 				forceFallback: true,
 				fallbackTolerance: 3,
+				fallbackOnBody: true, // attaches the clone to document.body instead of the list. Whit this in true was able to attach the card directly to the cursor
 				onEnd: (evt) => {
 					if (evt.from === evt.to) {
 						return;

@@ -48,6 +48,13 @@ scope for this pass, these rules just make columns/cards legible.
 	opacity: 0.4;
 }
 
+.sortable-fallback {           /* or your fallbackClass */
+	rotate: 3deg;               /* use `rotate`, NOT `transform` */
+	box-shadow: var(--shadow-l);
+	cursor: grabbing;
+}
+
+
 .clar-kanban-card__title {
 	font-weight: 500;
 }
