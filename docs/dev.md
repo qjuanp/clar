@@ -1,7 +1,17 @@
 # Manual testing: Kanban Board Bases view
 
-There is no automated UI test for this feature — verify it by hand in a real Obsidian
-vault, following the steps below.
+## Automated tests
+
+- `npm run test:unit` — fast unit tests for the pure grouping/task-stats logic
+  (`src/basesKanvanView/columns.ts`, `task-stats.ts`), no Obsidian instance needed.
+- `npm run test:e2e` — builds the plugin and runs the WDIO Obsidian Service suite
+  (`test/e2e/specs/`) against a real, latest-version Obsidian instance, using the
+  fixture vault at `test/e2e/vaults/kanban/` (copied to a temp dir per run — the
+  fixture itself is never mutated). See `docs/specs/4_testing.md`.
+- `npm test` runs both.
+
+The manual walkthrough below is still useful for exploratory testing (styling, visual
+drag-and-drop behavior, etc.) beyond what the automated suites assert.
 
 ## Prerequisites
 
@@ -74,6 +84,13 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    percentage of checked boxes) below the title. Confirm the note with no tasks shows
    neither line — just the title, as before. Open the mixed-tasks note, toggle a
    checkbox, and confirm the board updates without a manual reload.
+8. **Drag and drop**: drag a card into a different column and confirm both (a) it
+   visually moves, and (b) the note's frontmatter property updates to the target
+   column's value (open the note, or inspect the file on disk). Drag a card back into
+   its own column and confirm nothing changes. Try dragging a card into **"No column"**
+   and confirm the drop is rejected (the card stays where it was, frontmatter
+   unchanged) — "No column" is a fallback bucket for notes missing the property, not a
+   real value to write.
 
 ## Rebuild/reload loop
 
