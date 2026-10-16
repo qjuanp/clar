@@ -67,7 +67,7 @@ export function renderKanbanBoard(
 					column.id === NO_COLUMN_ID
 						? { name: 'clar-kanban-cards', put: false }
 						: 'clar-kanban-cards',
-				animation: 0,
+				animation: 150,
 				forceFallback: true,
 				fallbackTolerance: 3,
 				onEnd: (evt) => {
