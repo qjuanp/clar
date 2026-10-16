@@ -16,7 +16,7 @@ drag-and-drop behavior, etc.) beyond what the automated suites assert.
 
 ## Prerequisites
 
-- Node.js 18+ (`node --version`).
+- Node.js 20+ (`node --version`; `.nvmrc` pins 24 — run `nvm use`).
 - Obsidian **1.10.0 or later** (Bases' plugin-facing view API requires it — matches
   `manifest.json`'s `minAppVersion`).
 - A vault with the core **Bases** plugin enabled: **Settings → Core plugins → Bases**.

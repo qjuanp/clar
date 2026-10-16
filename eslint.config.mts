@@ -9,6 +9,7 @@ export default defineConfig(
 		'esbuild.config.mjs',
 		'version-bump.mjs',
 		'scripts/setup-test-vault.mjs',
+		'scripts/check-node.mjs',
 		'versions.json',
 		'main.js',
 		'package.json',

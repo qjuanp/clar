@@ -13,11 +13,9 @@ frontmatter on drop.
 - Bundled to `main.js` via esbuild; release artifacts are `main.js`,
   `manifest.json`, `styles.css` at the plugin root (never commit `main.js` or
   `dist/`, both are gitignored).
-- `src/settings.ts` is **unused leftover scaffolding** from the sample-plugin
-  template (`main.ts` never references it). It's the source of the two
-  pre-existing `obsidianmd/sample-names` lint errors — don't try to "fix" them
-  by renaming in place unless you're actually wiring up a settings tab; if the
-  file is truly dead, deleting it is more honest than patching around it.
+- There is no settings tab. The unused sample-plugin `src/settings.ts` was
+  deleted, along with its `obsidianmd/sample-names` lint errors. Add a settings
+  module only when a spec actually needs one.
 
 Full design docs: [`docs/architecture.md`](docs/architecture.md) (module-by-module
 breakdown + a dependency diagram) and [`docs/dev.md`](docs/dev.md) (manual test
@@ -39,7 +37,7 @@ it for real):
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
 | `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
 | `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
-| `view-options.ts` | Declares the two Bases view-config controls (column property, column order) |
+| `view-options.ts` | Declares the Bases view-config controls (column property, column order, show task list) |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
 | `render.ts` | DOM rendering + SortableJS wiring (drag-and-drop between columns) |
 | `view.ts` | `KanbanBasesView extends BasesView` — orchestrates data → columns → render, drop handling, click-to-open |
@@ -61,24 +59,34 @@ etc.). When asked to implement something covered by one of these:
    add new tests for the feature → final full validation pass).
 2. Present an implementation plan before writing code if the spec asks for
    one (most do).
-3. After implementing, run **both** `npm run test:unit` and `npm run
-   test:e2e` (or `npm test` for both) — not just unit tests — before calling
-   the work done. If existing tests break, stop and present a fix plan rather
-   than patching around the failure silently.
-4. Update `docs/architecture.md` and `docs/dev.md` when the change affects
+3. **Before starting implementation**, establish a clean baseline. Run
+   `npm run lint` first, then the tests (`npm run test:unit` and
+   `npm run test:e2e`). Lint must pass with zero errors. If the baseline is
+   already failing, report it before changing code, so pre-existing failures
+   aren't mistaken for regressions you caused.
+4. **After implementation is complete**, run `npm run lint` again first and
+   fix everything it reports. Then run **both** `npm run test:unit` and
+   `npm run test:e2e`, not just unit tests, before calling the work done.
+   `npm test` runs all three in that order (lint → unit → e2e) and stops at
+   the first failure. If existing tests break, stop and present a fix plan
+   rather than patching around the failure silently.
+5. Update `docs/architecture.md` and `docs/dev.md` when the change affects
    what they describe — both have drifted from the code before (see the
    `src/core/` split above); don't let that happen again for changes you make.
 
 ## Environment & commands
 
-- **Node version matters.** CI lints/unit-tests on Node 20.x/22.x/24.x and
-  runs e2e only on 24.x. If the active shell's `node --version` is older
-  (some environments default to an old Node from a version manager — Node 16
-  has been seen in the wild here — `vitest`/`vite` then fail outright with a
-  `node:fs/promises` import error), switch to a supported version first,
-  e.g. with nvm:
+- **Node version matters (20+ required, 24 recommended).** CI lints and
+  unit-tests on Node 20.x/22.x/24.x and runs e2e only on 24.x. Some
+  environments default to an old Node from a version manager; Node 16 is the
+  default shell Node here. On it, ESLint 9 crashes with `TypeError: isBuiltin
+  is not a function` and vitest fails with a `node:fs/promises` import error.
+  `npm run lint` and `npm run test:unit` now run `scripts/check-node.mjs`
+  first (via `prelint`/`pretest:unit`), which stops with a readable message
+  instead. `package.json` declares `engines.node >= 20`. Switch with nvm,
+  which reads `.nvmrc` (`24`):
   ```bash
-  source ~/.nvm/nvm.sh && nvm use 24
+  source ~/.nvm/nvm.sh && nvm use
   ```
 - Package manager: npm (`package-lock.json` is committed).
 
@@ -86,10 +94,10 @@ etc.). When asked to implement something covered by one of these:
 npm install                # install deps
 npm run dev                # esbuild watch mode
 npm run build               # tsc -noEmit + production esbuild bundle
-npm run lint                # eslint . (eslint-plugin-obsidianmd)
+npm run lint                # Node check + eslint . (eslint-plugin-obsidianmd)
 npm run test:unit           # vitest run — src/**/*.test.ts
 npm run test:e2e            # npm run build && wdio run ./wdio.conf.mts
-npm test                    # test:unit && test:e2e
+npm test                    # lint && test:unit && test:e2e
 npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian/plugins/clar
 ```
 
@@ -161,15 +169,19 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 ## Linting & code style
 
 - `npm run lint` runs ESLint with `eslint-plugin-obsidianmd`'s recommended
-  config (flat config, `eslint.config.mts`).
+  config (flat config, `eslint.config.mts`). It must exit with **zero
+  errors**: it's a gate before tests, both before and after implementation
+  (see Development workflow), and in CI (`.github/workflows/lint.yml`).
+- Lint runs before the tests because it's fast and catches type-aware
+  problems (e.g. `no-unnecessary-type-assertion`, floating promises) that
+  `tsc` and the tests don't.
+- Node scripts outside `src/`/`test/` (`esbuild.config.mjs`,
+  `scripts/*.mjs`, …) are listed in `globalIgnores` in `eslint.config.mts`.
+  Add new ones there, since the config only sets browser globals.
 - Style already in the codebase: tabs for indentation, single quotes,
   semicolons, `interface` for object shapes (`KanbanColumn`, `TaskStats`,
   etc.), and `import type { ... }` for type-only imports. Match existing
   files rather than introducing a new style.
-- `src/settings.ts` has two known pre-existing lint errors
-  (`obsidianmd/sample-names`) from unused template scaffolding — don't spend
-  time "fixing" these unless you're specifically asked to wire up settings;
-  they're not caused by your changes and aren't a regression signal.
 - Don't disable rules or add `--no-verify`/ignore comments to work around a
   failure without understanding why it's failing first.
 
