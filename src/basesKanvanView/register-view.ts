@@ -5,7 +5,7 @@ import { createKanbanViewOptions } from './view-options';
 
 export function registerKanbanView(plugin: Plugin): void {
 	const registered = plugin.registerBasesView(KANBAN_VIEW_TYPE, {
-		name: 'Kanban board',
+		name: '[Clár] Kanban',
 		icon: 'lucide-square-kanban',
 		factory: (controller, containerEl) => new KanbanBasesView(controller, containerEl),
 		options: createKanbanViewOptions(plugin.app),

@@ -3,3 +3,10 @@
 # Clár
 
 An Obsidian plugin that adds a **Kanban Board** view for [Bases](https://docs.obsidian.md/plugins/guides/bases-view), grouping a base's filtered notes into columns by a chosen list-type frontmatter property.
+
+## How to install?
+
+- Go to: https://community.obsidian.md/plugins/clar
+- Click `Add to Obsidian`
+- Enable your plugin
+- Chose your base and add your view `[Clár] Kanban`
