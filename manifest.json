@@ -3,7 +3,7 @@
 	"name": "Clar",
 	"version": "0.1.1",
 	"minAppVersion": "1.10.0",
-	"description": "Adds a Kanban Board view for Obsidian Bases.",
+	"description": "Adds a Kanban Board view to your Bases.",
 	"author": "@qjuanp",
 	"authorUrl": "https://qjuanp.dev",
 	"fundingUrl": "https://github.com/sponsors/qjuanp",
