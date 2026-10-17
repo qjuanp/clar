@@ -43,7 +43,7 @@
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.71.2",
 		"vitest": "^3.2.7",
-		"wdio-obsidian-reporter": "^3.2.1",
+		"wdio-obsidian-reporter": "^3.3.0",
 		"wdio-obsidian-service": "^3.2.1"
 	}
 }
