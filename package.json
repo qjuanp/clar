@@ -17,9 +17,9 @@
 		"test": "npm run lint && npm run test:unit && npm run test:e2e"
 	},
 	"keywords": [],
-	"license": "0-BSD",
+	"license": "agpl-3.0",
 	"engines": {
-		"node": ">=20"
+		"node": ">=26"
 	},
 	"dependencies": {
 		"sortablejs": "^1.15.6"
@@ -46,5 +46,10 @@
 		"wdio-obsidian-reporter": "^3.3.0",
 		"wdio-obsidian-service": "^3.3.0",
 		"webdriverio": "^10.0.2"
+	},
+	"overrides": {
+		"wdio-obsidian-service": {
+			"webdriverio": "$webdriverio"
+		}
 	}
 }
