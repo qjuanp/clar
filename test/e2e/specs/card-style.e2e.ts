@@ -8,6 +8,7 @@ import {
 	expandTaskList,
 	openBase,
 	readCardStyle,
+	readSearchQuery,
 	readTaskList,
 } from '../support/kanban-board';
 
@@ -25,7 +26,15 @@ describe('Card style: tags, task stats and progress bar', function () {
 		await closeAllViews();
 	});
 
+	it('hides tags by default, when the view does not turn "Show tags" on', async function () {
+		await openBase('Board Unordered.base');
+
+		expect(await browser.$$('.clar-kanban-card__meta').length).toBe(0);
+		expect(await browser.$$('.clar-kanban-card__tag').length).toBe(0);
+	});
+
 	it('shows frontmatter tags as pills in the meta section, in order and deduplicated', async function () {
+		// Board.base sets `showTags: true`.
 		await openBase('Board.base');
 
 		// Marketing Plan.md: `tags: [launch, q3]`.
@@ -85,14 +94,18 @@ describe('Card style: tags, task stats and progress bar', function () {
 		expect(expanded.toggle).toEqual({ text: '', hasIcon: true, ariaLabel: 'Hide tasks', expanded: 'true' });
 	});
 
-	it('opens the note when a tag pill is clicked, like the rest of the card', async function () {
+	it('searches for the tag when a tag pill is clicked, without opening the note', async function () {
 		await openBase('Board.base');
+		const activeBefore = await activeFilePath();
+
+		// Marketing Plan's first tag is #launch.
 		await clickTagPill('Marketing Plan');
 
-		await browser.waitUntil(async () => (await activeFilePath()) === 'Projects/Marketing Plan.md', {
+		await browser.waitUntil(async () => (await readSearchQuery()) === 'tag:#launch', {
 			timeout: 5000,
-			timeoutMsg: 'Clicking a tag pill did not open the note',
+			timeoutMsg: 'Clicking a tag pill did not open search for "tag:#launch"',
 		});
+		expect(await activeFilePath()).toBe(activeBefore);
 	});
 
 	it('keeps the task stats but drops the toggle when the task list option is off', async function () {

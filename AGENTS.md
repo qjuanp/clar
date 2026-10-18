@@ -38,6 +38,7 @@ it for real):
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
 | `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
 | `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
+| `tag-search.ts` | Opens Obsidian search for `tag:#<tag>` when a tag pill is clicked (uses the undocumented core Search plugin via `app.internalPlugins`, returns `false` on failure) |
 | `view-options.ts` | Declares the Bases view-config controls (column property, column order, show task list) |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
 | `render.ts` | DOM rendering + SortableJS wiring (drag-and-drop between columns) |
@@ -110,7 +111,7 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
   `StringValue` (the real `obsidian` package ships types only, no runtime).
 - Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
-  `update-column.ts`'s `buildFrontmatterListValue`). Anything that needs a
+  `update-column.ts`'s `buildFrontmatterListValue`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force
   Obsidian API mocks into the unit layer for that.

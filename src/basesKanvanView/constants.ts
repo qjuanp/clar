@@ -4,6 +4,7 @@ export const KANBAN_OPTION_KEYS = {
 	GROUP_PROPERTY: 'groupProperty',
 	COLUMN_ORDER: 'columnOrder',
 	SHOW_TASK_LIST: 'showTaskList',
+	SHOW_TAGS: 'showTags',
 } as const;
 
 export const NO_COLUMN_ID = '__no-column__';

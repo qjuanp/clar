@@ -80,9 +80,11 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    - Clicking a card opens the corresponding note.
 6. **Rename check**: confirm the view's name is editable via Bases' own view-management
    UI (the plugin doesn't add a separate "name" option — see `architecture.md`).
-7. **Card details**: give a note frontmatter `tags` (list form) and confirm they show as
-   `#tag` pills under the title (case-only duplicates appear once). Clicking a pill opens
-   the note, and a note without tags shows no pill row. For the note with a mix of
+7. **Card details**: give a note frontmatter `tags` (list form). With **Show tags** off
+   (the default), confirm no pills appear. Turn **Show tags** on in the view options and
+   confirm the tags show as `#tag` pills under the title (case-only duplicates appear
+   once). Clicking a pill opens the Search pane with `tag:#<tag>` and does not open the
+   note. A note without tags shows no pill row. For the note with a mix of
    checked/unchecked tasks, confirm the card's task footer shows a checkbox icon with the
    number of unchecked boxes. Hovering it says "Completed N%". A bar along the footer's
    bottom edge is filled to that percentage. Confirm the note with no tasks has no footer. Open the mixed-tasks note, toggle a

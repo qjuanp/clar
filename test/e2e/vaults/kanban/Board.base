@@ -6,3 +6,4 @@ views:
     name: Ordered board
     groupProperty: note.status
     columnOrder: "todo, in-progress, done, cancelled"
+    showTags: true

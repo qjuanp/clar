@@ -12,7 +12,8 @@ import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
 import { buildKanbanColumns, mergeColumnOrder } from './columns';
 import { normalizeTags } from './card-tags';
 import { getTaskStats } from './task-stats';
-import { renderKanbanBoard, type TaskListRenderOptions } from './render';
+import { renderKanbanBoard, type TagRenderOptions, type TaskListRenderOptions } from './render';
+import { openTagSearch } from './tag-search';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
 import { updateEntryColumn } from './update-column';
 
@@ -74,7 +75,8 @@ export class KanbanBasesView extends BasesView {
 			columns,
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
-			(file) => normalizeTags(parseFrontMatterTags(this.app.metadataCache.getFileCache(file)?.frontmatter ?? null)),
+			// Tags are opt-in: only an explicit `true` shows them (default off).
+			this.config.get(KANBAN_OPTION_KEYS.SHOW_TAGS) === true ? this.tagOptions() : null,
 			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
 			(labels) => this.onColumnsReordered(labels),
 			// Only an explicit `false` hides the list: an unset option means the default (on).
@@ -112,6 +114,18 @@ export class KanbanBasesView extends BasesView {
 	private onColumnsReordered(labels: string[]): void {
 		const previousOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
 		this.config.set(KANBAN_OPTION_KEYS.COLUMN_ORDER, mergeColumnOrder(previousOrder, labels).join(', '));
+	}
+
+	private tagOptions(): TagRenderOptions {
+		return {
+			getTags: (file) =>
+				normalizeTags(parseFrontMatterTags(this.app.metadataCache.getFileCache(file)?.frontmatter ?? null)),
+			onTagClick: (tag) => {
+				if (!openTagSearch(this.app, tag)) {
+					new Notice('Clár: could not open search — is the core search plugin enabled?');
+				}
+			},
+		};
 	}
 
 	private taskListOptions(): TaskListRenderOptions {

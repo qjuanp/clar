@@ -16,6 +16,14 @@ export interface TaskListRenderOptions {
 	renderTaskList: (file: TFile, listEl: HTMLElement) => void;
 }
 
+/** Callbacks for the per-card tag pills (tags spec). */
+export interface TagRenderOptions {
+	/** The note's tags, without `#`. */
+	getTags: (file: TFile) => string[];
+	/** Called when a pill is clicked; the click doesn't also open the note. */
+	onTagClick: (tag: string) => void;
+}
+
 const TASK_LIST_CLASS = 'clar-kanban-card__tasks';
 const COLUMN_CLASS = 'clar-kanban-column';
 const NO_COLUMN_CLASS = 'clar-kanban-column--no-column';
@@ -28,14 +36,15 @@ const COLUMN_HANDLE_CLASS = 'clar-kanban-column__handle';
  * Column reorders (dragged by the handle in each column header) are reported
  * via `onColumnsReordered` with the new order of real column labels.
  * Pass `taskList: null` to hide the per-card task list; a card's task stats
- * (active count + progress bar) are shown either way.
+ * (active count + progress bar) are shown either way. Pass `tags: null` to
+ * hide the tag pills.
  */
 export function renderKanbanBoard(
 	boardEl: HTMLElement,
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
 	getTaskStats: (file: TFile) => TaskStats | null,
-	getTags: (file: TFile) => string[],
+	tags: TagRenderOptions | null,
 	onCardMoved: (path: string, targetColumnLabel: string) => void,
 	onColumnsReordered: (labels: string[]) => void,
 	taskList: TaskListRenderOptions | null,
@@ -73,14 +82,8 @@ export function renderKanbanBoard(
 			cardEl.dataset.path = entry.file.path;
 			cardEl.createDiv({ cls: 'clar-kanban-card__title', text: entry.file.basename });
 
-			// Tag pills are display-only: a click on one bubbles up to the card
-			// and opens the note, like a click anywhere else on it.
-			const tags = getTags(entry.file);
-			if (tags.length > 0) {
-				const metaEl = cardEl.createDiv({ cls: 'clar-kanban-card__meta' });
-				for (const tag of tags) {
-					metaEl.createSpan({ cls: ['tag', 'clar-kanban-card__tag'], text: `#${tag}` });
-				}
+			if (tags) {
+				renderTagPills(cardEl, entry.file, tags);
 			}
 
 			const stats = getTaskStats(entry.file);
@@ -162,6 +165,31 @@ function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (labels:
 			onColumnsReordered(labels);
 		},
 	});
+}
+
+/**
+ * Tag pills in the card's meta row, using Obsidian's own `a.tag` markup. A
+ * click runs `onTagClick` instead of the card's open-the-note handler.
+ */
+function renderTagPills(cardEl: HTMLElement, file: TFile, options: TagRenderOptions): void {
+	const tags = options.getTags(file);
+	if (tags.length === 0) {
+		return;
+	}
+	const metaEl = cardEl.createDiv({ cls: 'clar-kanban-card__meta' });
+	for (const tag of tags) {
+		const tagEl = metaEl.createEl('a', {
+			cls: ['tag', 'clar-kanban-card__tag'],
+			text: `#${tag}`,
+			href: `#${tag}`,
+		});
+		setTooltip(tagEl, `Search for #${tag}`);
+		tagEl.addEventListener('click', (evt) => {
+			evt.preventDefault();
+			evt.stopPropagation();
+			options.onTagClick(tag);
+		});
+	}
 }
 
 /**

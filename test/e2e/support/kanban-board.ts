@@ -447,6 +447,19 @@ export async function readCardStyle(cardTitle: string): Promise<CardStyleSnapsho
 	}, cardTitle);
 }
 
+/**
+ * The query in Obsidian's Search pane, read from its input in the DOM (no
+ * internal API), or null when no Search pane is rendered.
+ */
+export async function readSearchQuery(): Promise<string | null> {
+	return browser.execute(() => {
+		const input = document.querySelector<HTMLInputElement>(
+			'.workspace-leaf-content[data-type="search"] input[type="search"]',
+		);
+		return input ? input.value : null;
+	});
+}
+
 /** Clicks a card's first tag pill. */
 export async function clickTagPill(cardTitle: string): Promise<void> {
 	const cardEl = await findCardElement(cardTitle);

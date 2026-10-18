@@ -27,5 +27,11 @@ export function createKanbanViewOptions(app: App): (config: BasesViewConfig) => 
 			displayName: 'Show task list',
 			default: true,
 		},
+		{
+			type: 'toggle',
+			key: KANBAN_OPTION_KEYS.SHOW_TAGS,
+			displayName: 'Show tags',
+			default: false,
+		},
 	];
 }

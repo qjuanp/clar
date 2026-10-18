@@ -99,7 +99,7 @@ scope for this pass, these rules just make columns/cards legible.
 
 .clar-kanban-card__tag {
 	font-size: var(--font-ui-smaller);
-	cursor: inherit;
+	cursor: pointer;
 }
 
 .clar-kanban-card__tasks {

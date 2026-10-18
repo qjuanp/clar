@@ -23,7 +23,7 @@ Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options
 means the core Bases plugin isn't enabled in the vault.
 
 ### `src/basesKanvanView/view-options.ts`
-Builds the three view-configuration controls exposed in the Bases toolbar, per the specs:
+Builds the four view-configuration controls exposed in the Bases toolbar, per the specs:
 - **Column property** — a `BasesPropertyOption` ("property" dropdown) filtered via
   `isListProperty()` so only list-type frontmatter properties are selectable.
 - **Column order** — a `BasesTextOption` for a comma-separated list defining column order.
@@ -32,6 +32,9 @@ Builds the three view-configuration controls exposed in the Bases toolbar, per t
 - **Show task list** — a `BasesToggleOption` (`showTaskList`, `default: true`) turning the
   per-card collapsible task list (spec 6) on or off. `config.get()` returns `undefined`
   for a never-touched option, so the view treats only an explicit `false` as "off".
+- **Show tags** — a `BasesToggleOption` (`showTags`, `default: false`) turning the
+  per-card tag pills on or off. Unlike "Show task list" it is opt-in: the view treats
+  only an explicit `true` as "on", so a board that never set it shows no tags.
 
 There is **no custom "view name" option**. `BasesViewConfig.name` already gives every
 Bases view (of any type) a user-editable name generically through Bases' own view
@@ -101,8 +104,18 @@ Pure, unit tested in `card-tags.test.ts`. `normalizeTags(raw)` takes
 blanks. It also removes case-insensitive duplicates (Obsidian treats tags
 case-insensitively), keeping the first spelling and the file order.
 
+### `src/basesKanvanView/tag-search.ts`
+`openTagSearch(app, tag)` opens Obsidian's Search pane with
+`buildTagSearchQuery(tag)` (`tag:#<tag>`, which also matches nested tags). Obsidian's public
+API has no way to run a search, so it calls the core Search plugin's internal
+`openGlobalSearch(query)` through `app.internalPlugins.getEnabledPluginById('global-search')`.
+That is an **internal, undocumented API**, and it is the same call Obsidian makes when you
+click a tag inside a note. Like `property-type.ts`, the lookup is narrowly typed and
+wrapped in try/catch. It returns `false` instead of throwing when the plugin is disabled
+or the shape has changed. `buildTagSearchQuery` is unit tested in `tag-search.test.ts`.
+
 ### `src/basesKanvanView/render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, getTags, onCardMoved,
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, tags, onCardMoved,
 onColumnsReordered, taskList)` clears and rebuilds the board from scratch on every call. Renders one
 `.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
@@ -110,9 +123,12 @@ header holds the `.clar-kanban-column__title` text and, for every real column, a
 `.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical` icon via `setIcon`);
 "No column" has no handle. It also renders one `.clar-kanban-card` per entry with a
 `.clar-kanban-card__title` (`entry.file.basename`), then:
-- **Tags.** When `getTags(entry.file)` is non-empty, a `.clar-kanban-card__meta` row of
-  `span.tag.clar-kanban-card__tag` pills (`#tag`, Obsidian's own tag look). They are
-  display-only: a click bubbles to the card and opens the note.
+- **Tags.** When `tags` (a `TagRenderOptions`) is non-null and `tags.getTags(entry.file)`
+  is non-empty, a `.clar-kanban-card__meta` row of `a.tag.clar-kanban-card__tag` pills
+  (`#tag`, `href="#tag"`, Obsidian's own tag markup), each with a "Search for #tag"
+  tooltip. A click calls `preventDefault()` and `stopPropagation()`, so the note doesn't
+  open, then calls `tags.onTagClick(tag)`. `tags: null` ("Show tags" off) renders no meta
+  row.
 - **Task section.** When `getTaskStats(entry.file)` is non-null, a
   `.clar-kanban-card__tasks` footer (see below). Notes with zero tasks have no footer.
 
@@ -191,11 +207,15 @@ no property is configured yet, otherwise calls `buildKanbanColumns()` then
 `renderKanbanBoard()`, passing two callbacks: a
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
-pure `getTaskStats()`), a `getTags` callback that runs Obsidian's public
-`parseFrontMatterTags(cache.frontmatter)` (frontmatter `tags`/`tag` only, list form; the
-legacy comma-string form isn't recognised by Obsidian 1.14 and so shows no pills) through
-the pure `normalizeTags()`, and `(path, targetColumnLabel) => this.onCardMoved(...)` for
+pure `getTaskStats()`), `TagRenderOptions` only when `showTags` is explicitly `true`
+(otherwise `null`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
 drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
+`TagRenderOptions` (from `tagOptions()`) has two callbacks:
+- `getTags`: runs Obsidian's public `parseFrontMatterTags(cache.frontmatter)` through the
+  pure `normalizeTags()`. Only frontmatter `tags`/`tag` count, in list form. Obsidian 1.14
+  doesn't recognise the legacy comma-string form, so it shows no pills.
+- `onTagClick`: calls `openTagSearch(this.app, tag)`, and shows a `Notice` if that returns
+  `false`.
 `onColumnsReordered` merges the new order with the current option via
 `mergeColumnOrder(parseColumnOrder(config.get('columnOrder')), labels)` and writes it back
 with `this.config.set('columnOrder', merged.join(', '))`. That is the same comma-separated text
@@ -264,6 +284,7 @@ flowchart TD
         updateColumn["update-column.ts<br/>updateEntryColumn()"]
         taskList["task-list.ts<br/>buildTaskTree(), setTaskStatusInContent()"]
         cardTags["card-tags.ts<br/>normalizeTags()"]
+        tagSearch["tag-search.ts<br/>openTagSearch(), buildTagSearchQuery()"]
     end
 
     subgraph Core["src/core/"]
@@ -283,6 +304,7 @@ flowchart TD
         ObsWorkspace["App.workspace"]
         ObsMetadataCache["App.metadataCache"]
         ObsMetadataTypeManager["App.metadataTypeManager (internal, undocumented)"]
+        ObsInternalPlugins["App.internalPlugins → global-search.openGlobalSearch() (internal, undocumented)"]
         ObsParsePropertyId["parsePropertyId()"]
         ObsTFile["TFile"]
         ObsFileManager["App.fileManager.processFrontMatter()"]
@@ -315,7 +337,9 @@ flowchart TD
     view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder')"| ObsBasesViewConfig
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
     view -->|"buildKanbanColumns(entries, groupProperty, columnOrder), mergeColumnOrder(previous, labels)"| columns
-    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, getTagsFn, onCardMoved, onColumnsReordered, taskListOptions)"| render
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, tagOptions, onCardMoved, onColumnsReordered, taskListOptions)"| render
+    view -->|"openTagSearch(app, tag)"| tagSearch
+    tagSearch -->|"getEnabledPluginById('global-search').openGlobalSearch('tag:#x')"| ObsInternalPlugins
     view -->|"normalizeTags(parseFrontMatterTags(frontmatter))"| cardTags
     view -->|"app.metadataCache.getFileCache(file)?.listItems ?? []"| ObsMetadataCache
     view -->|"getTaskStats(listItems)"| taskStats
@@ -339,7 +363,7 @@ flowchart TD
     updateColumn -->|"app.fileManager.processFrontMatter(file, fn)"| ObsFileManager
 
     classDef obsidian stroke-dasharray: 5 5;
-    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile obsidian;
+    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile,ObsInternalPlugins obsidian;
     classDef external stroke-dasharray: 2 2;
     class Sortable external;
 ```
@@ -385,6 +409,10 @@ base" for free.
 - **`app.metadataTypeManager` is internal/undocumented.** The list-type filter for the
   property dropdown depends on it; if Obsidian changes or removes this internal, the
   dropdown falls back to showing all frontmatter properties rather than failing.
+- **Tag search uses `app.internalPlugins` (internal/undocumented).** Clicking a tag pill
+  depends on the core Search plugin's `openGlobalSearch()`. If that plugin is disabled, or
+  Obsidian changes the internal, the click shows a `Notice` instead of searching. The
+  e2e suite covers the working path only; the `Notice` fallback is not automated.
 - **First-value-only for multi-value lists.** If a selected list property holds more
   than one value on a given note, only the first value determines its column.
 - **Dropping a card can briefly "flicker".** The frontmatter write triggered by a drop
