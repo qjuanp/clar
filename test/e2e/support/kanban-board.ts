@@ -137,6 +137,136 @@ export async function dragCardToColumn(cardTitle: string, targetColumnLabel: str
 	}
 }
 
+async function findColumnElement(columnLabel: string) {
+	const columns = await browser.$$('.clar-kanban-column').getElements();
+	for (const column of columns) {
+		if ((await column.$('.clar-kanban-column__title').getText()) === columnLabel) {
+			return column;
+		}
+	}
+	throw new Error(`Column not found: ${columnLabel}`);
+}
+
+/**
+ * Drags a column into another column's place, pressing on `grabSelector`
+ * inside the dragged column's header (its handle by default) and releasing
+ * over the `side` half of the target column's header.
+ *
+ * Unlike `dragCardToColumn`, the pointer travels in small viewport-relative
+ * steps: SortableJS only swaps a column with the one directly under the
+ * pointer, so one long jump past several columns only ever moves the
+ * dragged column a single slot. Both
+ * points are computed in one in-page call and clamped to the window, since
+ * the board can be wider than the (fixed-size) test window.
+ */
+export async function dragColumn(
+	columnLabel: string,
+	targetColumnLabel: string,
+	options: { side?: 'before' | 'after'; grabSelector?: string } = {},
+): Promise<void> {
+	const { side = 'before', grabSelector = '.clar-kanban-column__handle' } = options;
+	const points = await browser.execute(
+		(label, targetLabel, dropSide, selector) => {
+			const columnFor = (l: string) =>
+				Array.from(document.querySelectorAll('.clar-kanban-column')).find(
+					(el) => el.querySelector('.clar-kanban-column__title')?.textContent === l,
+				);
+			const grabRect = columnFor(label)?.querySelector(selector)?.getBoundingClientRect();
+			const targetRect = columnFor(targetLabel)
+				?.querySelector('.clar-kanban-column__header')
+				?.getBoundingClientRect();
+			if (!grabRect || !targetRect) {
+				return null;
+			}
+			const clampX = (x: number) => Math.max(1, Math.min(window.innerWidth - 2, Math.round(x)));
+			return {
+				from: { x: clampX(grabRect.left + grabRect.width / 2), y: Math.round(grabRect.top + grabRect.height / 2) },
+				to: {
+					x: clampX(targetRect.left + targetRect.width * (dropSide === 'before' ? 0.25 : 0.75)),
+					y: Math.round(targetRect.top + targetRect.height / 2),
+				},
+			};
+		},
+		columnLabel,
+		targetColumnLabel,
+		side,
+		grabSelector,
+	);
+	if (!points) {
+		throw new Error(`Could not locate "${grabSelector}" in "${columnLabel}" or the "${targetColumnLabel}" header`);
+	}
+
+	const { from, to } = points;
+	let action = browser
+		.action('pointer', { parameters: { pointerType: 'mouse' } })
+		.move({ duration: 0, origin: 'viewport', x: from.x, y: from.y })
+		.down({ button: 0 })
+		.pause(50)
+		.move({ duration: 50, origin: 'viewport', x: from.x + 5, y: from.y + 5 })
+		.pause(50);
+	const steps = Math.max(1, Math.ceil(Math.abs(to.x - from.x) / 40));
+	for (let step = 1; step <= steps; step++) {
+		const x = Math.round(from.x + ((to.x - from.x) * step) / steps);
+		action = action.move({ duration: 30, origin: 'viewport', x, y: to.y }).pause(60);
+	}
+	await action.up({ button: 0 }).perform();
+}
+
+/** Collapses both sidebars so as much of the board as possible fits in the test window. */
+export async function collapseSidebars(): Promise<void> {
+	await browser.executeObsidian(({ app }) => {
+		app.workspace.leftSplit.collapse();
+		app.workspace.rightSplit.collapse();
+	});
+}
+
+/** Scrolls the board horizontally to its far end (it scrolls when wider than the window). */
+export async function scrollBoardToEnd(): Promise<void> {
+	await browser.execute(() => {
+		const viewEl = document.querySelector('.clar-kanban-view');
+		if (viewEl) {
+			viewEl.scrollLeft = viewEl.scrollWidth;
+		}
+	});
+}
+
+/**
+ * The rendered column labels in DOM order, read in a single in-page
+ * `execute` call so it can't hit the stale-element burst described on
+ * `readBoardTolerant()` while the board re-renders.
+ */
+export async function readColumnLabels(): Promise<string[]> {
+	return browser.execute(() =>
+		Array.from(document.querySelectorAll('.clar-kanban-column')).map(
+			(el) => el.querySelector('.clar-kanban-column__title')?.textContent ?? '',
+		),
+	);
+}
+
+/** Whether the column with the given label renders a drag handle in its header. */
+export async function columnHasHandle(columnLabel: string): Promise<boolean> {
+	return (await findColumnElement(columnLabel)).$('.clar-kanban-column__handle').isExisting();
+}
+
+/**
+ * The `columnOrder` value stored in a `.base` file, parsed into labels, or
+ * null when the file has no `columnOrder` entry. Reads the raw file, so it
+ * reflects what was actually persisted rather than in-memory view state.
+ */
+export async function readBaseColumnOrder(path: string): Promise<string[] | null> {
+	const content = await readNote(path);
+	const match = /^\s*columnOrder:\s*(.*)$/m.exec(content);
+	if (!match) {
+		return null;
+	}
+	return (match[1] ?? '')
+		.trim()
+		.replace(/^(['"])(.*)\1$/, '$2')
+		.split(',')
+		.map((label) => label.trim())
+		.filter((label) => label.length > 0);
+}
+
 /**
  * Reads the board like `readBoard()`, but sequentially (one WebDriver
  * command in flight at a time) and returns `null` instead of throwing when

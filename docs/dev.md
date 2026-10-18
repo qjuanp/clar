@@ -92,7 +92,20 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    and confirm the drop is rejected (the card stays where it was, frontmatter
    unchanged) — "No column" is a fallback bucket for notes missing the property, not a
    real value to write.
-9. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
+9. **Column reorder**. Each column header except **"No column"** shows a grip icon in its
+   right corner.
+   - Drag a column by that icon to a new position. Confirm the board keeps the new order,
+     the **Column order** view option now lists it (e.g. `done, todo, in-progress,
+     cancelled`), and after a couple of seconds the `.base` file's `columnOrder` matches.
+   - Pressing a column's title text, or a card, must not move the column.
+   - Try dropping a column after **"No column"** and confirm it lands just before it
+     instead. "No column" always stays last and never appears in **Column order**.
+   - On a view whose **Column order** is blank, reorder once and confirm the option gets
+     filled in.
+   - Add a label with no matching notes to **Column order** (e.g. `review` between `todo`
+     and `done`), reorder the visible columns, and confirm `review` is still in the option
+     next to `todo`.
+10. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
    a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
    - Confirm each card with tasks shows a collapsed **▸ Show tasks** footer.
    - Expand it. Confirm tasks appear in file order with their nesting, the link renders,

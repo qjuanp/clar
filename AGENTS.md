@@ -53,17 +53,17 @@ Features in this repo are driven by numbered specs in `docs/specs/*.md`
 (`1_base-kanban-board.md`, `2_card-task-details.md`, `5_drag-and-drop.md`,
 etc.). When asked to implement something covered by one of these:
 
-1. Read the spec file fully — it usually has its own "Development Process"
-   section spelling out the expected order of work (plan → implement → run
-   the full existing test suite and fix regressions before adding new tests →
-   add new tests for the feature → final full validation pass).
-2. Present an implementation plan before writing code if the spec asks for
-   one (most do).
-3. **Before starting implementation**, establish a clean baseline. Run
+1. **Before start planning**, establish a clean baseline. Run
    `npm run lint` first, then the tests (`npm run test:unit` and
    `npm run test:e2e`). Lint must pass with zero errors. If the baseline is
    already failing, report it before changing code, so pre-existing failures
    aren't mistaken for regressions you caused.
+2. Read the spec file fully — it usually has its own "Development Process"
+   section spelling out the expected order of work (plan → implement → run
+   the full existing test suite and fix regressions before adding new tests →
+   add new tests for the feature → final full validation pass).
+3. Present an implementation plan before writing code if the spec asks for
+   one (must do).
 4. **After implementation is complete**, run `npm run lint` again first and
    fix everything it reports. Then run **both** `npm run test:unit` and
    `npm run test:e2e`, not just unit tests, before calling the work done.
@@ -76,15 +76,14 @@ etc.). When asked to implement something covered by one of these:
 
 ## Environment & commands
 
-- **Node version matters (20+ required, 24 recommended).** CI lints and
-  unit-tests on Node 20.x/22.x/24.x and runs e2e only on 24.x. Some
-  environments default to an old Node from a version manager; Node 16 is the
-  default shell Node here. On it, ESLint 9 crashes with `TypeError: isBuiltin
-  is not a function` and vitest fails with a `node:fs/promises` import error.
+- **Node version matters: node 26 is being used.** CI lints and
+  unit-tests on Node 26.x and runs e2e only on 26.x. Some
+  environments default to an old Node from a version manager; Node 26 is the
+  default shell Node here. 
   `npm run lint` and `npm run test:unit` now run `scripts/check-node.mjs`
   first (via `prelint`/`pretest:unit`), which stops with a readable message
-  instead. `package.json` declares `engines.node >= 20`. Switch with nvm,
-  which reads `.nvmrc` (`24`):
+  instead. `package.json` declares `engines.node >= 2=6`. Switch with nvm,
+  which reads `.nvmrc` (`26`):
   ```bash
   source ~/.nvm/nvm.sh && nvm use
   ```

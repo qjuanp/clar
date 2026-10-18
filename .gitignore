@@ -21,7 +21,7 @@ data.json
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 .envrc
-**/specs/*
+docs/**/specs/*
 
 # wdio-obsidian-service: downloaded Obsidian binaries and test run logs.
 # test/e2e/vaults/ is seed data for the e2e suite and must stay tracked.

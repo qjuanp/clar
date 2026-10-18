@@ -24,9 +24,40 @@ scope for this pass, these rules just make columns/cards legible.
 	max-height: 100%;
 }
 
+.clar-kanban-column__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px;
+	margin-bottom: 6px;
+}
+
 .clar-kanban-column__title {
 	font-weight: 600;
-	margin-bottom: 6px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.clar-kanban-column__handle {
+	display: flex;
+	flex: 0 0 auto;
+	color: var(--text-faint);
+	cursor: grab;
+}
+
+.clar-kanban-column__handle:hover {
+	color: var(--text-muted);
+}
+
+.clar-kanban-column__handle svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.clar-kanban-column.sortable-fallback {
+	padding: 4px;
+	background-color: var(--background-secondary);
+	border-radius: var(--radius-m);
 }
 
 .clar-kanban-column__cards {

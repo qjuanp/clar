@@ -27,6 +27,8 @@ Builds the three view-configuration controls exposed in the Bases toolbar, per t
 - **Column property** — a `BasesPropertyOption` ("property" dropdown) filtered via
   `isListProperty()` so only list-type frontmatter properties are selectable.
 - **Column order** — a `BasesTextOption` for a comma-separated list defining column order.
+  Besides being typed by hand, it is rewritten by the view whenever columns are reordered
+  by drag and drop (see `view.ts` below).
 - **Show task list** — a `BasesToggleOption` (`showTaskList`, `default: true`) turning the
   per-card collapsible task list (spec 6) on or off. `config.get()` returns `undefined`
   for a never-touched option, so the view treats only an explicit `false` as "off".
@@ -60,6 +62,13 @@ groupProperty, columnOrder)`:
   they actually have entries), then any other discovered columns in order of first
   appearance, then "No column" last, always, if non-empty.
 
+`mergeColumnOrder(previousOrder, visibleOrder)` builds the `columnOrder` to persist after a
+column drag. It starts from the new on-screen order of real columns and re-inserts any
+label from the previous order that isn't on screen (a configured column that currently
+has no cards) right after the label that preceded it before. A temporarily empty column
+therefore keeps its place in the configuration. Duplicates are dropped. Unit tested in
+`columns.test.ts`.
+
 ### `src/core/task-stats.ts`
 `getTaskStats(listItems: ListItemCache[])` takes the already-parsed list items directly —
 it does not touch `App` or `TFile` at all, which keeps this module pure and independent of
@@ -87,9 +96,13 @@ Pure, no DOM, no `App`/`TFile` — unit tested in `task-list.test.ts`.
   line no longer looks like a task, so a stale toggle aborts instead of corrupting the note.
 
 ### `src/basesKanvanView/render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, onCardMoved, taskList)` clears and
-rebuilds the board from scratch on every call. Renders one `.clar-kanban-column` per
-column with a title and a card list; one `.clar-kanban-card` per entry with a
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, onCardMoved, onColumnsReordered,
+taskList)` clears and rebuilds the board from scratch on every call. Renders one
+`.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
+`.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
+header holds the `.clar-kanban-column__title` text and, for every real column, a
+`.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical` icon via `setIcon`);
+"No column" has no handle. It also renders one `.clar-kanban-card` per entry with a
 `.clar-kanban-card__title` (`entry.file.basename`) and, only when
 `getTaskStats(entry.file)` returns non-null, a `.clar-kanban-card__meta` block showing
 "Active tasks: N" and "Progress: N%" — notes with zero tasks show just the title. Each
@@ -105,8 +118,23 @@ drops (see Known limitations), only let cards be dragged *out* of it. `forceFall
 makes SortableJS drive the drag off plain pointer events instead of native HTML5 DnD.
 `onEnd` is a no-op when a card is dropped back into its origin column (no ordering is
 persisted); otherwise it reads `data-path`/`data-column-label` straight off the DOM and
-calls `onCardMoved(path, targetColumnLabel)`. Returns the created `Sortable` instances so
-the view can destroy them before the next render.
+calls `onCardMoved(path, targetColumnLabel)`.
+
+**Column reordering.** One more `Sortable` sits on `boardEl` itself, in its own
+`'clar-kanban-columns'` group so cards and columns never mix: `draggable:
+'.clar-kanban-column'`, `handle: '.clar-kanban-column__handle'`, `direction: 'horizontal'`,
+`forceFallback: true`. Only the handle starts a column drag, so pressing a card or the
+title text never moves a column. "No column" stays last for two reasons:
+- It has no handle, so it can never be dragged. This is deliberately not done with a
+  `filter`, which would `preventDefault` every press inside that column, including on its
+  cards.
+- `onMove` refuses any position after it (`evt.related` is "No column" and
+  `willInsertAfter`).
+
+When the column's index changed, `onEnd` reads the `data-column-label` values of the
+board's columns in DOM order, leaves out "No column", and calls
+`onColumnsReordered(labels)`. Returns every created `Sortable` instance (card lists plus the
+board) so the view can destroy them before the next render.
 
 **Task list section (spec 6).** When `taskList` (a `TaskListRenderOptions`) is non-null
 and the note has tasks, each card gets a `.clar-kanban-card__tasks` footer below the meta
@@ -142,7 +170,13 @@ no property is configured yet, otherwise calls `buildKanbanColumns()` then
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
 pure `getTaskStats()`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
-drag-and-drop drops. `onCardMoved` resolves the dropped file via
+drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
+`onColumnsReordered` merges the new order with the current option via
+`mergeColumnOrder(parseColumnOrder(config.get('columnOrder')), labels)` and writes it back
+with `this.config.set('columnOrder', merged.join(', '))`. That is the same comma-separated text
+users type, so the **Column order** field shows the new order. Bases persists the change
+to the `.base` file on its own (debounced, about 2s in testing). The DOM already shows the
+new order, so the re-render that follows rebuilds the same layout. `onCardMoved` resolves the dropped file via
 `app.vault.getAbstractFileByPath(path)`, re-reads the current `groupProperty`, and calls
 `updateEntryColumn(...)`, catching any rejection into a `console.error` plus an Obsidian
 `Notice` — there's no manual DOM revert on failure; the next metadata-driven re-render is
@@ -208,7 +242,7 @@ flowchart TD
 
     subgraph Core["src/core/"]
         constants["constants.ts<br/>KANBAN_VIEW_TYPE, KANBAN_OPTION_KEYS,<br/>NO_COLUMN_ID, NO_COLUMN_LABEL"]
-        columns["columns.ts<br/>buildKanbanColumns()"]
+        columns["columns.ts<br/>buildKanbanColumns(), mergeColumnOrder()"]
         taskStats["task-stats.ts<br/>getTaskStats(listItems)"]
     end
 
@@ -252,10 +286,10 @@ flowchart TD
     view -->|"extends BasesView(controller)"| ObsBasesView
     view -->|"constructor(controller, containerEl)"| ObsQueryController
     view -.->|imports| constants
-    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get('columnOrder')"| ObsBasesViewConfig
+    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder')"| ObsBasesViewConfig
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
-    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder)"| columns
-    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, onCardMoved, taskListOptions)"| render
+    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder), mergeColumnOrder(previous, labels)"| columns
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, onCardMoved, onColumnsReordered, taskListOptions)"| render
     view -->|"app.metadataCache.getFileCache(file)?.listItems ?? []"| ObsMetadataCache
     view -->|"getTaskStats(listItems)"| taskStats
     view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
@@ -272,7 +306,7 @@ flowchart TD
 
     render -.->|imports| constants
     render -->|"onOpenFile(entry.file: TFile)"| ObsTFile
-    render -->|"new Sortable(cardsEl, { group, forceFallback: true, filter, onEnd })"| Sortable
+    render -->|"new Sortable(cardsEl, { group, forceFallback: true, filter, onEnd }), new Sortable(boardEl, { handle, onMove, onEnd })"| Sortable
 
     updateColumn -->|"parsePropertyId(groupProperty)"| ObsParsePropertyId
     updateColumn -->|"app.fileManager.processFrontMatter(file, fn)"| ObsFileManager
@@ -284,7 +318,7 @@ flowchart TD
 ```
 Reading this as "what Clár expects Obsidian to provide": a `Plugin` base class with
 `registerBasesView()`; a `BasesView` base class constructed with a `QueryController`;
-per-view `BasesViewConfig` (`get`/`getAsPropertyId`) and `BasesQueryResult`
+per-view `BasesViewConfig` (`get`/`getAsPropertyId`/`set`) and `BasesQueryResult`
 (`this.data.data`) objects supplied by the Bases engine on every render; `BasesEntry`
 objects with `getValue()`; `App.workspace` and `App.metadataCache` (both public API); the
 `parsePropertyId()` helper and `TFile` type; and, as the one undocumented exception,
@@ -308,8 +342,11 @@ KanbanBasesView.onDataUpdated()
 buildKanbanColumns()  →  KanbanColumn[]
         │
         ▼
-renderKanbanBoard()  →  DOM (+ inert Sortable per column)
+renderKanbanBoard()  →  DOM (+ inert Sortable per column, + one for the columns)
 ```
+
+A column drag runs the other way: `onColumnsReordered()` → `config.set('columnOrder')` →
+Bases saves the `.base` file → the next `onDataUpdated()` renders with the new order.
 
 Because `BasesView.data.data` is already filtered and sorted by Bases for the whole
 base, the Kanban view does not implement any of its own filtering logic — this
@@ -342,7 +379,8 @@ base" for free.
   `task-list.ts`/`update-column.ts`'s pure logic directly; `npm run test:e2e` drives a real,
   latest-version Obsidian instance via WDIO Obsidian Service against the fixture vault
   in `test/e2e/vaults/kanban/` (copied to a temp dir per run), including drag-and-drop
-  coverage in `test/e2e/specs/drag-and-drop.e2e.ts` and task-list coverage in
+  coverage in `test/e2e/specs/drag-and-drop.e2e.ts`, column-reorder coverage in
+  `test/e2e/specs/column-reorder.e2e.ts` and task-list coverage in
   `test/e2e/specs/task-list.e2e.ts` (drags are simulated via a manual
   W3C Actions pointer sequence rather than WebdriverIO's built-in `dragAndDrop`, and
   `forceFallback: true` above is what makes that reliable against SortableJS). See
@@ -357,6 +395,15 @@ base" for free.
   re-renders but not closing and reopening the base. The e2e suite empties the leaf before
   each spec-6 test for that reason: `obsidianPage.resetVault()` alone keeps the same view
   instance, and its state, alive.
+- **Column reorder rewrites the option text.** Dragging a column replaces the
+  **Column order** text with the normalised `a, b, c` form. This drops any extra spacing
+  or blank entries the user had typed. Labels that don't match a column are kept, in their
+  relative position. The `.base` file is written by Bases on its own debounce, so the file
+  on disk lags the board by a couple of seconds.
+- **Column drags need the handle.** Only the grip icon in a column's header starts a
+  column drag. The e2e test for "No column" checks the outcome (it ends last). The
+  simulated pointer path never actually tries a drop after it, so the `onMove` guard isn't
+  tested on its own.
 - **Column-order matching is exact, case-sensitive string comparison** between the
   configured `columnOrder` text and each column's stringified property value; unmatched
   configured labels are silently dropped (no empty phantom columns are created).

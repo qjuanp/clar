@@ -71,3 +71,24 @@ export function buildKanbanColumns(
 
 	return ordered;
 }
+
+/**
+ * Builds the column order to persist after the user drags columns around.
+ * `visibleOrder` is the new on-screen order (real columns only, never "No
+ * column"). Labels from `previousOrder` that aren't on screen — configured
+ * columns that currently have no cards — are kept, each re-inserted right
+ * after the label that preceded it in the old order, so a temporarily empty
+ * column doesn't silently drop out of the configuration.
+ */
+export function mergeColumnOrder(previousOrder: string[], visibleOrder: string[]): string[] {
+	const merged = [...new Set(visibleOrder)];
+	let previousLabel: string | null = null;
+	for (const label of previousOrder) {
+		if (!merged.includes(label)) {
+			const insertAt = previousLabel === null ? 0 : merged.indexOf(previousLabel) + 1;
+			merged.splice(insertAt, 0, label);
+		}
+		previousLabel = label;
+	}
+	return merged;
+}

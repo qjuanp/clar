@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ListValue, NullValue } from 'obsidian';
 import type { BasesEntry, BasesPropertyId, Value } from 'obsidian';
-import { buildKanbanColumns } from './columns';
+import { buildKanbanColumns, mergeColumnOrder } from './columns';
 import { NO_COLUMN_ID, NO_COLUMN_LABEL } from './constants';
 
 const GROUP_PROPERTY = 'note.status' as BasesPropertyId;
@@ -64,5 +64,44 @@ describe('buildKanbanColumns', () => {
 
 		expect(columns).toHaveLength(1);
 		expect(columns[0]?.label).toBe('todo');
+	});
+});
+
+describe('mergeColumnOrder', () => {
+	it('uses the visible order as-is when nothing was configured before', () => {
+		expect(mergeColumnOrder([], ['done', 'todo'])).toEqual(['done', 'todo']);
+	});
+
+	it('replaces a configured order when every column is visible', () => {
+		expect(mergeColumnOrder(['todo', 'in-progress', 'done'], ['done', 'todo', 'in-progress'])).toEqual([
+			'done',
+			'todo',
+			'in-progress',
+		]);
+	});
+
+	it('keeps a configured column without cards right after its previous neighbour', () => {
+		expect(mergeColumnOrder(['todo', 'review', 'done'], ['done', 'todo'])).toEqual(['done', 'todo', 'review']);
+	});
+
+	it('keeps a configured column without cards first when it was first before', () => {
+		expect(mergeColumnOrder(['review', 'todo', 'done'], ['done', 'todo'])).toEqual(['review', 'done', 'todo']);
+	});
+
+	it('keeps consecutive configured columns without cards together and in order', () => {
+		expect(mergeColumnOrder(['todo', 'review', 'qa', 'done'], ['done', 'todo'])).toEqual([
+			'done',
+			'todo',
+			'review',
+			'qa',
+		]);
+	});
+
+	it('includes visible columns that were never configured', () => {
+		expect(mergeColumnOrder(['todo', 'done'], ['backlog', 'done', 'todo'])).toEqual(['backlog', 'done', 'todo']);
+	});
+
+	it('never duplicates a label', () => {
+		expect(mergeColumnOrder(['todo', 'todo', 'done'], ['done', 'todo', 'done'])).toEqual(['done', 'todo']);
 	});
 });

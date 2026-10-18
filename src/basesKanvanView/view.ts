@@ -1,7 +1,7 @@
 import { BasesView, Component, MarkdownRenderer, Notice, TFile, type QueryController } from 'obsidian';
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
-import { buildKanbanColumns } from './columns';
+import { buildKanbanColumns, mergeColumnOrder } from './columns';
 import { getTaskStats } from './task-stats';
 import { renderKanbanBoard, type TaskListRenderOptions } from './render';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
@@ -66,6 +66,7 @@ export class KanbanBasesView extends BasesView {
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
 			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
+			(labels) => this.onColumnsReordered(labels),
 			// Only an explicit `false` hides the list: an unset option means the default (on).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TASK_LIST) === false ? null : this.taskListOptions(),
 		);
@@ -91,6 +92,16 @@ export class KanbanBasesView extends BasesView {
 			console.error('[Clár] Failed to update column for', path, err);
 			new Notice('Clár: could not move card — see console for details');
 		});
+	}
+
+	/**
+	 * Persists a dragged column order into the "Column order" option, in the
+	 * same comma-separated text form users type by hand. The DOM already shows
+	 * the new order, so any re-render this triggers rebuilds the same layout.
+	 */
+	private onColumnsReordered(labels: string[]): void {
+		const previousOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
+		this.config.set(KANBAN_OPTION_KEYS.COLUMN_ORDER, mergeColumnOrder(previousOrder, labels).join(', '));
 	}
 
 	private taskListOptions(): TaskListRenderOptions {
