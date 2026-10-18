@@ -86,8 +86,41 @@ scope for this pass, these rules just make columns/cards legible.
 }
 
 
+.clar-kanban-card__header {
+	display: flex;
+	align-items: flex-start;
+	gap: 4px;
+}
+
 .clar-kanban-card__title {
+	flex: 1 1 auto;
+	min-width: 0;
 	font-weight: 500;
+	overflow-wrap: anywhere;
+}
+
+.clar-kanban-card__indicators {
+	display: flex;
+	flex: 0 0 auto;
+	gap: 2px;
+	margin-inline-start: auto;
+}
+
+.clar-kanban-card__indicator {
+	display: flex;
+}
+
+.clar-kanban-card__indicator svg {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
+.clar-kanban-card__indicator--recent {
+	color: var(--color-green);
+}
+
+.clar-kanban-card__indicator--stale {
+	color: var(--color-orange);
 }
 
 .clar-kanban-card__meta {

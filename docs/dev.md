@@ -109,7 +109,18 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    - Add a label with no matching notes to **Column order** (e.g. `review` between `todo`
      and `done`), reorder the visible columns, and confirm `review` is still in the option
      next to `todo`.
-10. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
+10. **Recent and stale cards** (spec 10). Open **Settings → Clár**.
+   - Confirm both **Identify recent cards** and **Identify stale cards** are on, with a
+     timeframe of 1 week. Turning a toggle off hides its timeframe row.
+   - Type `60` with unit **Days** and press Enter. The amount is clamped to 31.
+   - Set the stale unit to **Hours**. A Notice says the recent timeframe was lowered to
+     1 hour, and the recent row now shows 1 hour.
+   - Restore 1 week for both. On the board, a newly created note shows a green ✨ icon
+     next to its title (hover: "Recently created").
+   - A note last modified more than a week ago, and created earlier still, shows an orange
+     hourglass (hover: "Not updated for N weeks"). A note is never shown with both icons.
+   - Turning either toggle off removes its icons from open boards immediately.
+11. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
    a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
    - Confirm each card with tasks shows a collapsed footer with a chevron icon (hover:
      "Show tasks"; "Hide tasks" once expanded).

@@ -16,9 +16,65 @@ talks to the Obsidian/Bases API directly, and `src/core/` holds framework-agnost
 logic that only knows about plain data (`ListItemCache[]`, `BasesEntry[]`, strings) —
 nothing in `src/core/` imports `App`, `TFile`, or any other live Obsidian object.
 
+### `src/main.ts` — `ClarPlugin`
+`onload()` runs three steps:
+1. Loads the global settings with `sanitizeSettings(await this.loadData())`.
+2. Adds `ClarSettingTab`.
+3. Calls `registerKanbanView(this)`.
+
+`updateSettings(next)` sanitizes, saves with `saveData()`, and calls every listener
+registered through `onSettingsChange(listener)`, which returns an unsubscribe function.
+Open boards use that to re-render. The plugin implements `SettingsProvider` from
+`settings-model.ts`, so view code only depends on that interface, not on `main.ts`.
+
+### `src/settings/settings-model.ts`
+Pure, unit tested in `settings-model.test.ts`. It defines:
+- **Types:** `ClarSettings` holds `recentCards` and `staleCards`, each
+  `{ enabled, timeframe: { amount, unit } }`.
+- **Defaults:** both enabled, 1 week.
+- **Unit limits:** hours ≤ 24, days ≤ 31, weeks ≤ 53, months ≤ 12.
+- **Conversion:** `timeframeToMs`, where **a month is 30 days**, so mixed units compare.
+- **Helpers:** `clampAmount` (whole numbers in `[1, max]`) and `formatTimeframe`.
+- **`sanitizeSettings(raw)`:** turns whatever `loadData()` returns into valid settings and
+  raises the stale timeframe to the recent one if it is shorter.
+- **`applyTimeframeChange(settings, key, next)`:** the golden rule (stale ≥ recent). It
+  clamps the edit, then copies it onto the other timeframe when they conflict. Raising
+  recent above stale raises stale; lowering stale below recent lowers recent. It reports
+  which side was `adjusted`. The rule holds whether or not the features are enabled.
+
+### `src/settings/settings-tab.ts`
+`ClarSettingTab` renders a "Recent cards" and a "Stale cards" section. Each section has:
+- an **Identify … cards** toggle;
+- when enabled, a **… timeframe** row with a number field (min 1, max per unit) and a unit
+  dropdown.
+
+Edits are handled like this:
+- **Amount:** committed on the input's `change` event (blur or Enter), not per keystroke,
+  because rebuilding the tab would steal focus.
+- **Saving:** every edit goes through `applyTimeframeChange()` and
+  `plugin.updateSettings()`.
+- **Auto-adjust:** a `Notice` names the other timeframe when it was changed, then the tab
+  rebuilds itself.
+- **Rebuild:** this uses the deprecated `display()`. See Known limitations.
+- **Test hooks:** timeframe rows carry `clar-setting-<key>-timeframe` classes.
+
+### `src/basesKanvanView/card-age.ts`
+Pure, unit tested in `card-age.test.ts`. `getCardAgeIndicators(ctime, mtime, now, settings)`
+returns `{ recent, staleTooltip }`:
+- **Recent:** the feature is on and `now - ctime ≤ recent timeframe` (inclusive).
+- **Stale:** the feature is on, the card is **not recent**, and `now - mtime > stale
+  timeframe` (exclusive). The `!recent` check is a runtime guard for the golden rule:
+  settings already ensure stale ≥ recent, but file dates can disagree. For example, a
+  copied file can keep an old `mtime` while getting a new `ctime`.
+
+`formatRelativeDuration(ms)` produces the stale tooltip ("Not updated for 2 weeks"). It
+uses the largest whole unit (months of 30 days, weeks, days, hours), or "less than an
+hour".
+
 ### `src/basesKanvanView/register-view.ts`
 Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })` from
-`onload()`. The `factory` constructs a `KanbanBasesView`; `options` comes from
+`onload()`. The `factory` constructs a `KanbanBasesView`, passing the plugin as its
+`SettingsProvider`; `options` comes from
 `view-options.ts`. Warns (doesn't throw) if registration returns `false`, which
 means the core Bases plugin isn't enabled in the vault.
 
@@ -115,7 +171,7 @@ wrapped in try/catch. It returns `false` instead of throwing when the plugin is 
 or the shape has changed. `buildTagSearchQuery` is unit tested in `tag-search.test.ts`.
 
 ### `src/basesKanvanView/render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, tags, onCardMoved,
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, getCardAge, tags, onCardMoved,
 onColumnsReordered, taskList)` clears and rebuilds the board from scratch on every call. Renders one
 `.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
@@ -199,7 +255,10 @@ whole array rather than only touching index 0, matching `columns.ts`'s own "firs
 only" read model — any extra values beyond index 0 on the original property are dropped.
 
 ### `src/basesKanvanView/view.ts`
-`KanbanBasesView extends BasesView`. `onDataUpdated()` (the one method Bases requires)
+`KanbanBasesView extends BasesView`. Its constructor takes a `SettingsProvider` (the
+plugin) and registers an `onSettingsChange` listener. That listener re-runs
+`onDataUpdated()` once the view has rendered at least once, so card indicators follow
+settings changes straight away. `onDataUpdated()` (the one method Bases requires)
 is where re-rendering happens: it reads `groupProperty` via
 `this.config.getAsPropertyId('groupProperty')` and `columnOrder` via
 `this.config.get('columnOrder')` (comma-split/trimmed), shows an empty-state prompt if
@@ -207,7 +266,9 @@ no property is configured yet, otherwise calls `buildKanbanColumns()` then
 `renderKanbanBoard()`, passing two callbacks: a
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
-pure `getTaskStats()`), `TagRenderOptions` only when `showTags` is explicitly `true`
+pure `getTaskStats()`), a `getCardAge` callback, which calls
+`getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, settings)` with one `now` taken
+per render, `TagRenderOptions` only when `showTags` is explicitly `true`
 (otherwise `null`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
 drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
 `TagRenderOptions` (from `tagOptions()`) has two callbacks:
@@ -275,6 +336,11 @@ subgraph — that separation is the point of the folder split.
 flowchart TD
     main["main.ts<br/>ClarPlugin"]
 
+    subgraph Settings["src/settings/"]
+        settingsModel["settings-model.ts<br/>sanitizeSettings(), applyTimeframeChange()"]
+        settingsTab["settings-tab.ts<br/>ClarSettingTab"]
+    end
+
     subgraph BasesKanvanView["src/basesKanvanView/"]
         register["register-view.ts<br/>registerKanbanView()"]
         viewOptions["view-options.ts<br/>createKanbanViewOptions()"]
@@ -284,6 +350,7 @@ flowchart TD
         updateColumn["update-column.ts<br/>updateEntryColumn()"]
         taskList["task-list.ts<br/>buildTaskTree(), setTaskStatusInContent()"]
         cardTags["card-tags.ts<br/>normalizeTags()"]
+        cardAge["card-age.ts<br/>getCardAgeIndicators()"]
         tagSearch["tag-search.ts<br/>openTagSearch(), buildTagSearchQuery()"]
     end
 
@@ -294,7 +361,8 @@ flowchart TD
     end
 
     subgraph ObsidianAPI["Obsidian API surface (host app — expected, not implemented here)"]
-        ObsPluginBase["Plugin (base class)"]
+        ObsPluginBase["Plugin (base class) + loadData()/saveData()"]
+        ObsPluginSettingTab["PluginSettingTab + Setting + Notice"]
         ObsRegisterView["Plugin.registerBasesView()"]
         ObsBasesView["BasesView (base class)"]
         ObsQueryController["QueryController"]
@@ -319,7 +387,14 @@ flowchart TD
     end
 
     main -->|extends| ObsPluginBase
-    main -->|"registerKanbanView(this: Plugin)"| register
+    main -->|"registerKanbanView(this: Plugin & SettingsProvider)"| register
+    main -->|"sanitizeSettings(loadData()), saveData(settings)"| ObsPluginBase
+    main -->|"addSettingTab(new ClarSettingTab(app, this))"| settingsTab
+    settingsTab -->|"applyTimeframeChange(), plugin.updateSettings()"| settingsModel
+    settingsTab -->|extends| ObsPluginSettingTab
+    view -->|"getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, settings)"| cardAge
+    view -->|"settingsProvider.onSettingsChange(cb)"| main
+    cardAge -->|"timeframeToMs()"| settingsModel
 
     register -->|"plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })"| ObsRegisterView
     register -->|"createKanbanViewOptions(plugin.app)"| viewOptions
@@ -363,7 +438,7 @@ flowchart TD
     updateColumn -->|"app.fileManager.processFrontMatter(file, fn)"| ObsFileManager
 
     classDef obsidian stroke-dasharray: 5 5;
-    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile,ObsInternalPlugins obsidian;
+    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile,ObsInternalPlugins,ObsPluginSettingTab obsidian;
     classDef external stroke-dasharray: 2 2;
     class Sortable external;
 ```
@@ -396,6 +471,9 @@ buildKanbanColumns()  →  KanbanColumn[]
 renderKanbanBoard()  →  DOM (+ inert Sortable per column, + one for the columns)
 ```
 
+A settings change also re-renders: `ClarPlugin.updateSettings()` → `onSettingsChange`
+listeners → `onDataUpdated()` on every open board.
+
 A column drag runs the other way: `onColumnsReordered()` → `config.set('columnOrder')` →
 Bases saves the `.base` file → the next `onDataUpdated()` renders with the new order.
 
@@ -405,6 +483,20 @@ satisfies the spec's "should incorporate already the filters defined for the who
 base" for free.
 
 ## Known limitations / caveats
+
+- **Recent / stale use file-system dates.** They come from `file.stat.ctime` and `mtime`.
+  Sync tools, git clones and copies can reset a note's creation date, which makes old
+  notes look recent. The runtime guard keeps those notes from also showing as stale.
+- **Recent / stale icons refresh only on re-render.** A re-render happens on any vault
+  metadata change, a Bases query change, reopening the base, or a settings change. An
+  idle board isn't refreshed on a timer, so an icon can be out of date until the next
+  re-render.
+- **Timeframes treat a month as 30 days**, both for the golden rule (e.g. 12 months <
+  53 weeks) and for the "Not updated for N months" text.
+- **The settings tab uses the deprecated `display()`.** The declarative
+  `getSettingDefinitions()` replacement needs Obsidian 1.13. `minAppVersion` is still
+  1.10.0, so `settings-tab.ts` keeps `display()` behind one commented lint suppression.
+  Migrate once `minAppVersion` is raised.
 
 - **`app.metadataTypeManager` is internal/undocumented.** The list-type filter for the
   property dropdown depends on it; if Obsidian changes or removes this internal, the
@@ -436,7 +528,9 @@ base" for free.
   in `test/e2e/vaults/kanban/` (copied to a temp dir per run), including drag-and-drop
   coverage in `test/e2e/specs/drag-and-drop.e2e.ts`, column-reorder coverage in
   `test/e2e/specs/column-reorder.e2e.ts`, card-style coverage in
-  `test/e2e/specs/card-style.e2e.ts` and task-list coverage in
+  `test/e2e/specs/card-style.e2e.ts`, recent/stale indicator and settings-tab coverage in
+  `test/e2e/specs/card-age.e2e.ts` (which backdates `TFile.stat` in memory, since tests
+  can't set real creation dates) and task-list coverage in
   `test/e2e/specs/task-list.e2e.ts` (drags are simulated via a manual
   W3C Actions pointer sequence rather than WebdriverIO's built-in `dragAndDrop`, and
   `forceFallback: true` above is what makes that reliable against SortableJS). See

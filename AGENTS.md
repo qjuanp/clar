@@ -8,14 +8,21 @@ columns by a chosen list-type frontmatter property and lets cards be dragged
 between columns, writing the target column's value back into the note's
 frontmatter on drop.
 
-- Entry point: `src/main.ts` → `ClarPlugin` (minimal — just calls
-  `registerKanbanView(this)` from `src/basesKanvanView/register-view.ts`).
+- Entry point: `src/main.ts` → `ClarPlugin`. It loads and saves the global settings,
+  adds the settings tab, notifies open boards when settings change
+  (`onSettingsChange`), and calls `registerKanbanView(this)` from
+  `src/basesKanvanView/register-view.ts`.
 - Bundled to `main.js` via esbuild; release artifacts are `main.js`,
   `manifest.json`, `styles.css` at the plugin root (never commit `main.js` or
   `dist/`, both are gitignored).
-- There is no settings tab. The unused sample-plugin `src/settings.ts` was
-  deleted, along with its `obsidianmd/sample-names` lint errors. Add a settings
-  module only when a spec actually needs one.
+- Global settings (spec 10: recent / stale card indicators) live in `src/settings/`:
+  - `settings-model.ts` is **pure**: types, defaults, per-unit limits, `sanitizeSettings`,
+    and the golden-rule logic `applyTimeframeChange`. It is unit tested.
+  - `settings-tab.ts` is UI only (`PluginSettingTab`).
+  Per-board options stay in Bases view options (`view-options.ts`). The tab uses
+  `display()`, which is deprecated since Obsidian 1.13. The declarative
+  `getSettingDefinitions()` would need `minAppVersion` raised from 1.10.0 to 1.13.0, so
+  there is one commented lint suppression for it in `settings-tab.ts`.
 
 Full design docs: [`docs/architecture.md`](docs/architecture.md) (module-by-module
 breakdown + a dependency diagram) and [`docs/dev.md`](docs/dev.md) (manual test
@@ -38,6 +45,7 @@ it for real):
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
 | `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
 | `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
+| `card-age.ts` | Pure: decides a card's recent / stale indicators from `file.stat` ctime/mtime + settings, and formats the "Not updated for …" relative time |
 | `tag-search.ts` | Opens Obsidian search for `tag:#<tag>` when a tag pill is clicked (uses the undocumented core Search plugin via `app.internalPlugins`, returns `false` on failure) |
 | `view-options.ts` | Declares the Bases view-config controls (column property, column order, show task list) |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
@@ -111,6 +119,7 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
   `StringValue` (the real `obsidian` package ships types only, no runtime).
 - Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
+  `card-age.ts`, `src/settings/settings-model.ts`,
   `update-column.ts`'s `buildFrontmatterListValue`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force

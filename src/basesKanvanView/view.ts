@@ -10,12 +10,14 @@ import {
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
 import { buildKanbanColumns, mergeColumnOrder } from './columns';
+import { getCardAgeIndicators } from './card-age';
 import { normalizeTags } from './card-tags';
 import { getTaskStats } from './task-stats';
 import { renderKanbanBoard, type TagRenderOptions, type TaskListRenderOptions } from './render';
 import { openTagSearch } from './tag-search';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
 import { updateEntryColumn } from './update-column';
+import type { SettingsProvider } from '../settings/settings-model';
 
 function parseColumnOrder(rawValue: unknown): string[] {
 	if (typeof rawValue !== 'string') {
@@ -37,14 +39,30 @@ export class KanbanBasesView extends BasesView {
 	private readonly expandedTaskLists = new Set<string>();
 	/** Owns the markdown render children of the current board; replaced on every render. */
 	private renderComponent: Component | null = null;
+	/** Set on the first `onDataUpdated()`; before that, `data`/`config` may not be ready. */
+	private hasRendered = false;
 
-	constructor(controller: QueryController, containerEl: HTMLElement) {
+	constructor(
+		controller: QueryController,
+		containerEl: HTMLElement,
+		private readonly settingsProvider: SettingsProvider,
+	) {
 		super(controller);
 		containerEl.addClass('clar-kanban-view');
 		this.boardEl = containerEl.createDiv({ cls: 'clar-kanban-board' });
+		// Plugin settings (recent / stale indicators) changed: re-render so the
+		// card icons follow the new timeframes straight away.
+		this.register(
+			settingsProvider.onSettingsChange(() => {
+				if (this.hasRendered) {
+					this.onDataUpdated();
+				}
+			}),
+		);
 	}
 
 	onDataUpdated(): void {
+		this.hasRendered = true;
 		if (!this.metadataListenerRegistered) {
 			this.metadataListenerRegistered = true;
 			// Bases' own onDataUpdated() only fires when the query result changes
@@ -70,11 +88,13 @@ export class KanbanBasesView extends BasesView {
 
 		const columnOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
 		const columns = buildKanbanColumns(this.data.data, groupProperty, columnOrder);
+		const now = Date.now();
 		this.sortables = renderKanbanBoard(
 			this.boardEl,
 			columns,
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
+			(file) => getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, this.settingsProvider.settings),
 			// Tags are opt-in: only an explicit `true` shows them (default off).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TAGS) === true ? this.tagOptions() : null,
 			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),

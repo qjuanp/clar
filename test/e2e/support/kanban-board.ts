@@ -524,3 +524,99 @@ export async function readNote(path: string): Promise<string> {
 export async function activeFilePath(): Promise<string | null> {
 	return browser.executeObsidian(({ app }) => app.workspace.getActiveFile()?.path ?? null);
 }
+
+/** Mirrors `createDefaultSettings()` in src/settings/settings-model.ts (tests can't import plugin code into the page). */
+export const DEFAULT_CLAR_SETTINGS = {
+	recentCards: { enabled: true, timeframe: { amount: 1, unit: 'weeks' } },
+	staleCards: { enabled: true, timeframe: { amount: 1, unit: 'weeks' } },
+};
+
+export type ClarSettingsSnapshot = typeof DEFAULT_CLAR_SETTINGS;
+
+interface ClarPluginLike {
+	settings: ClarSettingsSnapshot;
+	updateSettings(next: ClarSettingsSnapshot): Promise<void>;
+}
+
+/**
+ * Saves the plugin's global settings through `ClarPlugin.updateSettings()`,
+ * which also re-renders open boards. Reaches the plugin via the internal
+ * `app.plugins` registry, which is fine in tests.
+ */
+export async function setClarSettings(settings: ClarSettingsSnapshot): Promise<void> {
+	await browser.executeObsidian(async ({ app }, next) => {
+		const plugin = (app as unknown as { plugins: { getPlugin(id: string): ClarPluginLike | null } }).plugins.getPlugin(
+			'clar',
+		);
+		if (!plugin) {
+			throw new Error('Clár plugin is not loaded');
+		}
+		await plugin.updateSettings(next);
+	}, settings);
+}
+
+/** The plugin's current global settings. */
+export async function readClarSettings(): Promise<ClarSettingsSnapshot> {
+	return browser.executeObsidian(({ app }) => {
+		const plugin = (app as unknown as { plugins: { getPlugin(id: string): ClarPluginLike | null } }).plugins.getPlugin(
+			'clar',
+		);
+		if (!plugin) {
+			throw new Error('Clár plugin is not loaded');
+		}
+		return plugin.settings;
+	});
+}
+
+/**
+ * Backdates a note's in-memory `TFile.stat` (created / updated "ago" from now)
+ * and re-renders open boards. Real file-system creation dates can't be set
+ * from a test, and a freshly copied fixture's `ctime` differs by OS, so tests
+ * that check the recent / stale indicators must set both times explicitly.
+ * Obsidian only re-reads `stat` on file events, which these tests don't cause.
+ */
+export async function setFileTimes(path: string, times: { createdAgoMs: number; updatedAgoMs: number }): Promise<void> {
+	await browser.executeObsidian(
+		async ({ app }, notePath, { createdAgoMs, updatedAgoMs }) => {
+			const file = app.vault.getFileByPath(notePath);
+			if (!file) {
+				throw new Error(`Expected a file at "${notePath}"`);
+			}
+			const now = Date.now();
+			file.stat.ctime = now - createdAgoMs;
+			file.stat.mtime = now - updatedAgoMs;
+			const plugin = (app as unknown as { plugins: { getPlugin(id: string): ClarPluginLike | null } }).plugins.getPlugin(
+				'clar',
+			);
+			if (!plugin) {
+				throw new Error('Clár plugin is not loaded');
+			}
+			await plugin.updateSettings(plugin.settings);
+		},
+		path,
+		times,
+	);
+}
+
+export interface CardIndicatorsSnapshot {
+	/** Tooltip (`aria-label`) of the recent icon, or null when it isn't shown. */
+	recent: string | null;
+	/** Tooltip (`aria-label`) of the stale icon, or null when it isn't shown. */
+	stale: string | null;
+}
+
+/** A card's recent / stale indicators, read in one in-page call. Null if the card isn't rendered. */
+export async function readCardIndicators(cardTitle: string): Promise<CardIndicatorsSnapshot | null> {
+	return browser.execute((title) => {
+		const card = Array.from(document.querySelectorAll('.clar-kanban-card')).find(
+			(el) => el.querySelector('.clar-kanban-card__title')?.textContent === title,
+		);
+		if (!card) {
+			return null;
+		}
+		return {
+			recent: card.querySelector('.clar-kanban-card__indicator--recent')?.getAttribute('aria-label') ?? null,
+			stale: card.querySelector('.clar-kanban-card__indicator--stale')?.getAttribute('aria-label') ?? null,
+		};
+	}, cardTitle);
+}

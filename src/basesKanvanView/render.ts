@@ -2,6 +2,7 @@ import Sortable from 'sortablejs';
 import { setIcon, setTooltip, type TFile } from 'obsidian';
 import type { KanbanColumn } from './columns';
 import type { TaskStats } from './task-stats';
+import { RECENT_TOOLTIP, type CardAgeIndicators } from './card-age';
 import { NO_COLUMN_ID } from './constants';
 
 /**
@@ -44,6 +45,7 @@ export function renderKanbanBoard(
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
 	getTaskStats: (file: TFile) => TaskStats | null,
+	getCardAge: (file: TFile) => CardAgeIndicators,
 	tags: TagRenderOptions | null,
 	onCardMoved: (path: string, targetColumnLabel: string) => void,
 	onColumnsReordered: (labels: string[]) => void,
@@ -80,7 +82,7 @@ export function renderKanbanBoard(
 		for (const entry of column.entries) {
 			const cardEl = cardsEl.createDiv({ cls: 'clar-kanban-card' });
 			cardEl.dataset.path = entry.file.path;
-			cardEl.createDiv({ cls: 'clar-kanban-card__title', text: entry.file.basename });
+			renderCardHeader(cardEl, entry.file.basename, getCardAge(entry.file));
 
 			if (tags) {
 				renderTagPills(cardEl, entry.file, tags);
@@ -165,6 +167,34 @@ function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (labels:
 			onColumnsReordered(labels);
 		},
 	});
+}
+
+/**
+ * The card's title row: the title (kept text-only) plus, on the right, the
+ * recent / stale indicator icons (spec 10). Icons have no click handler, so
+ * a click bubbles to the card and opens the note, like the title.
+ */
+function renderCardHeader(cardEl: HTMLElement, title: string, age: CardAgeIndicators): void {
+	const headerEl = cardEl.createDiv({ cls: 'clar-kanban-card__header' });
+	headerEl.createDiv({ cls: 'clar-kanban-card__title', text: title });
+	if (!age.recent && age.staleTooltip === null) {
+		return;
+	}
+	const indicatorsEl = headerEl.createDiv({ cls: 'clar-kanban-card__indicators' });
+	if (age.recent) {
+		const recentEl = indicatorsEl.createSpan({
+			cls: ['clar-kanban-card__indicator', 'clar-kanban-card__indicator--recent'],
+		});
+		setIcon(recentEl, 'sparkles');
+		setTooltip(recentEl, RECENT_TOOLTIP);
+	}
+	if (age.staleTooltip !== null) {
+		const staleEl = indicatorsEl.createSpan({
+			cls: ['clar-kanban-card__indicator', 'clar-kanban-card__indicator--stale'],
+		});
+		setIcon(staleEl, 'hourglass');
+		setTooltip(staleEl, age.staleTooltip);
+	}
 }
 
 /**

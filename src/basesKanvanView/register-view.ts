@@ -1,13 +1,14 @@
 import type { Plugin } from 'obsidian';
+import type { SettingsProvider } from '../settings/settings-model';
 import { KANBAN_VIEW_TYPE } from './constants';
 import { KanbanBasesView } from './view';
 import { createKanbanViewOptions } from './view-options';
 
-export function registerKanbanView(plugin: Plugin): void {
+export function registerKanbanView(plugin: Plugin & SettingsProvider): void {
 	const registered = plugin.registerBasesView(KANBAN_VIEW_TYPE, {
 		name: '[Clár] Kanban',
 		icon: 'lucide-square-kanban',
-		factory: (controller, containerEl) => new KanbanBasesView(controller, containerEl),
+		factory: (controller, containerEl) => new KanbanBasesView(controller, containerEl, plugin),
 		options: createKanbanViewOptions(plugin.app),
 	});
 
