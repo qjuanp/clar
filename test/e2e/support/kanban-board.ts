@@ -216,7 +216,7 @@ export interface TaskListSnapshot {
 
 export async function readTaskList(cardTitle: string): Promise<TaskListSnapshot | null> {
 	return browser.execute((title) => {
-		const card = Array.from(activeDocument.querySelectorAll('.clar-kanban-card')).find(
+		const card = Array.from(document.querySelectorAll('.clar-kanban-card')).find(
 			(el) => el.querySelector('.clar-kanban-card__title')?.textContent === title,
 		);
 		const section = card?.querySelector('.clar-kanban-card__tasks');
