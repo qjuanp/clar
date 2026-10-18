@@ -440,7 +440,7 @@ export async function readCardStyle(cardTitle: string): Promise<CardStyleSnapsho
 				? {
 						valueNow: progress.getAttribute('aria-valuenow'),
 						fillRatio: barWidth > 0 ? (fill?.getBoundingClientRect().width ?? 0) / barWidth : 0,
-						sectionPosition: section?.indexOf(progress),
+						sectionPosition: section?.indexOf(progress) || -1, // -1 if not found
 					}
 				: null,
 		};
