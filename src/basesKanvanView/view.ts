@@ -1,7 +1,16 @@
-import { BasesView, Component, MarkdownRenderer, Notice, TFile, type QueryController } from 'obsidian';
+import {
+	BasesView,
+	Component,
+	MarkdownRenderer,
+	Notice,
+	TFile,
+	parseFrontMatterTags,
+	type QueryController,
+} from 'obsidian';
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
 import { buildKanbanColumns, mergeColumnOrder } from './columns';
+import { normalizeTags } from './card-tags';
 import { getTaskStats } from './task-stats';
 import { renderKanbanBoard, type TaskListRenderOptions } from './render';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
@@ -65,6 +74,7 @@ export class KanbanBasesView extends BasesView {
 			columns,
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
+			(file) => normalizeTags(parseFrontMatterTags(this.app.metadataCache.getFileCache(file)?.frontmatter ?? null)),
 			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
 			(labels) => this.onColumnsReordered(labels),
 			// Only an explicit `false` hides the list: an unset option means the default (on).

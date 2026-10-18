@@ -1,6 +1,9 @@
 ---
 status:
   - in-progress
+tags:
+  - launch
+  - q3
 ---
 
 # Marketing Plan

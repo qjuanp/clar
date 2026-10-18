@@ -1,5 +1,5 @@
 import Sortable from 'sortablejs';
-import { setIcon, type TFile } from 'obsidian';
+import { setIcon, setTooltip, type TFile } from 'obsidian';
 import type { KanbanColumn } from './columns';
 import type { TaskStats } from './task-stats';
 import { NO_COLUMN_ID } from './constants';
@@ -27,13 +27,15 @@ const COLUMN_HANDLE_CLASS = 'clar-kanban-column__handle';
  * the resulting frontmatter change) is what reconciles the DOM afterwards.
  * Column reorders (dragged by the handle in each column header) are reported
  * via `onColumnsReordered` with the new order of real column labels.
- * Pass `taskList: null` to hide the per-card task list.
+ * Pass `taskList: null` to hide the per-card task list; a card's task stats
+ * (active count + progress bar) are shown either way.
  */
 export function renderKanbanBoard(
 	boardEl: HTMLElement,
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
 	getTaskStats: (file: TFile) => TaskStats | null,
+	getTags: (file: TFile) => string[],
 	onCardMoved: (path: string, targetColumnLabel: string) => void,
 	onColumnsReordered: (labels: string[]) => void,
 	taskList: TaskListRenderOptions | null,
@@ -71,21 +73,19 @@ export function renderKanbanBoard(
 			cardEl.dataset.path = entry.file.path;
 			cardEl.createDiv({ cls: 'clar-kanban-card__title', text: entry.file.basename });
 
+			// Tag pills are display-only: a click on one bubbles up to the card
+			// and opens the note, like a click anywhere else on it.
+			const tags = getTags(entry.file);
+			if (tags.length > 0) {
+				const metaEl = cardEl.createDiv({ cls: 'clar-kanban-card__meta' });
+				for (const tag of tags) {
+					metaEl.createSpan({ cls: ['tag', 'clar-kanban-card__tag'], text: `#${tag}` });
+				}
+			}
+
 			const stats = getTaskStats(entry.file);
 			if (stats) {
-				const metaEl = cardEl.createDiv({ cls: 'clar-kanban-card__meta' });
-				metaEl.createDiv({
-					cls: 'clar-kanban-card__active-tasks',
-					text: `Active tasks: ${stats.active}`,
-				});
-				metaEl.createDiv({
-					cls: 'clar-kanban-card__progress',
-					text: `Progress: ${stats.progressPercent}%`,
-				});
-
-				if (taskList) {
-					renderTaskListSection(cardEl, entry.file, taskList);
-				}
+				renderTaskSection(cardEl, entry.file, stats, taskList);
 			}
 
 			cardEl.addEventListener('click', () => onOpenFile(entry.file));
@@ -164,29 +164,70 @@ function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (labels:
 	});
 }
 
-function renderTaskListSection(cardEl: HTMLElement, file: TFile, options: TaskListRenderOptions): void {
+/**
+ * The card's task footer: an optional expand/collapse icon (only when the
+ * task list is enabled), the active-task count with a "Completed N%"
+ * tooltip, the collapsible list itself, and a progress bar along the
+ * section's bottom edge.
+ */
+function renderTaskSection(
+	cardEl: HTMLElement,
+	file: TFile,
+	stats: TaskStats,
+	options: TaskListRenderOptions | null,
+): void {
 	const sectionEl = cardEl.createDiv({ cls: TASK_LIST_CLASS });
-	// Clicks inside the section (toggle, checkboxes, links) must not bubble up
-	// to the card's open-the-note handler.
+	// Clicks inside the section (toggle, count, checkboxes, links) must not
+	// bubble up to the card's open-the-note handler.
 	sectionEl.addEventListener('click', (evt) => evt.stopPropagation());
 
-	const toggleEl = sectionEl.createEl('button', { cls: 'clar-kanban-card__tasks-toggle' });
-	const listEl = sectionEl.createDiv({ cls: 'clar-kanban-card__tasks-list' });
+	const headerEl = sectionEl.createDiv({ cls: 'clar-kanban-card__tasks-header' });
+	const toggleEl = options
+		? headerEl.createEl('button', { cls: ['clickable-icon', 'clar-kanban-card__tasks-toggle'] })
+		: null;
 
-	const apply = (expanded: boolean) => {
-		toggleEl.setText(expanded ? '▾ Hide tasks' : '▸ Show tasks');
-		toggleEl.setAttr('aria-expanded', String(expanded));
-		listEl.toggleClass('is-collapsed', !expanded);
-		if (expanded && listEl.childElementCount === 0) {
-			options.renderTaskList(file, listEl);
-		}
-	};
+	const completedPercentageText = `Completed ${stats.progressPercent}%`;
+	const activeEl = headerEl.createDiv({ cls: 'clar-kanban-card__active-tasks' });
+	setIcon(activeEl.createSpan({ cls: 'clar-kanban-card__active-tasks-icon' }), 'square');
+	activeEl.createSpan({ cls: 'clar-kanban-card__active-tasks-count', text: String(stats.active) });
+	setTooltip(activeEl, completedPercentageText);
 
-	toggleEl.addEventListener('click', () => {
-		const expanded = !options.isExpanded(file.path);
-		options.onToggleExpanded(file.path, expanded);
-		apply(expanded);
+	const progressEl = sectionEl.createDiv({
+		cls: 'clar-kanban-card__progress',
+		attr: {
+			role: 'progressbar',
+			title: completedPercentageText,
+			'aria-valuemin': '0',
+			'aria-valuemax': '100',
+			'aria-valuenow': String(stats.progressPercent),
+			'data-progress': String(stats.progressPercent),
+		},
 	});
+	progressEl.setCssProps({ '--clar-progress': `${stats.progressPercent}%` });
+	progressEl.createDiv({ cls: 'clar-kanban-card__progress-fill' });
 
-	apply(options.isExpanded(file.path));
+	if (options && toggleEl) {
+		const listEl = sectionEl.createDiv({ cls: 'clar-kanban-card__tasks-list' });
+		const apply = (expanded: boolean) => {
+			const label = expanded ? 'Hide tasks' : 'Show tasks';
+			setIcon(toggleEl, expanded ? 'chevron-down' : 'chevron-right');
+			setTooltip(toggleEl, label);
+			toggleEl.setAttr('aria-label', label);
+			toggleEl.setAttr('aria-expanded', String(expanded));
+			listEl.toggleClass('is-collapsed', !expanded);
+			if (expanded && listEl.childElementCount === 0) {
+				options.renderTaskList(file, listEl);
+			}
+		};
+
+		toggleEl.addEventListener('click', () => {
+			const expanded = !options.isExpanded(file.path);
+			options.onToggleExpanded(file.path, expanded);
+			apply(expanded);
+		});
+
+		apply(options.isExpanded(file.path));
+	}
+
+	
 }

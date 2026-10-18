@@ -23,6 +23,7 @@ describe('Card task details (spec 2)', function () {
 		// Mobile App.md: 2 of 3 tasks done -> 1 active, 66.6...% rounds to 67%.
 		expect(findCard(board, 'Mobile App')).toEqual({
 			title: 'Mobile App',
+			tags: ['mobile'],
 			activeTasks: 1,
 			progressPercent: 67,
 		});
@@ -34,6 +35,7 @@ describe('Card task details (spec 2)', function () {
 
 		expect(findCard(board, 'Marketing Plan')).toEqual({
 			title: 'Marketing Plan',
+			tags: ['launch', 'q3'],
 			activeTasks: 2,
 			progressPercent: 0,
 		});
@@ -45,17 +47,19 @@ describe('Card task details (spec 2)', function () {
 
 		expect(findCard(board, 'Migrate Database')).toEqual({
 			title: 'Migrate Database',
+			tags: [],
 			activeTasks: 0,
 			progressPercent: 100,
 		});
 	});
 
-	it('shows no meta block at all for a note with zero tasks', async function () {
+	it('shows no task section for a note with zero tasks', async function () {
 		await openBase('Board.base');
 		const board = await readBoard();
 
 		expect(findCard(board, 'Website Redesign')).toEqual({
 			title: 'Website Redesign',
+			tags: [],
 			activeTasks: null,
 			progressPercent: null,
 		});
@@ -85,6 +89,7 @@ describe('Card task details (spec 2)', function () {
 
 		expect(findCard(await readBoard(), 'Mobile App')).toEqual({
 			title: 'Mobile App',
+			tags: ['mobile'],
 			activeTasks: 0,
 			progressPercent: 100,
 		});

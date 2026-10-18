@@ -80,10 +80,12 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    - Clicking a card opens the corresponding note.
 6. **Rename check**: confirm the view's name is editable via Bases' own view-management
    UI (the plugin doesn't add a separate "name" option — see `architecture.md`).
-7. **Task details**: for the note with a mix of checked/unchecked tasks, confirm its
-   card shows "Active tasks: N" (count of unchecked boxes) and "Progress: N%" (rounded
-   percentage of checked boxes) below the title. Confirm the note with no tasks shows
-   neither line — just the title, as before. Open the mixed-tasks note, toggle a
+7. **Card details**: give a note frontmatter `tags` (list form) and confirm they show as
+   `#tag` pills under the title (case-only duplicates appear once). Clicking a pill opens
+   the note, and a note without tags shows no pill row. For the note with a mix of
+   checked/unchecked tasks, confirm the card's task footer shows a checkbox icon with the
+   number of unchecked boxes. Hovering it says "Completed N%". A bar along the footer's
+   bottom edge is filled to that percentage. Confirm the note with no tasks has no footer. Open the mixed-tasks note, toggle a
    checkbox, and confirm the board updates without a manual reload.
 8. **Drag and drop**: drag a card into a different column and confirm both (a) it
    visually moves, and (b) the note's frontmatter property updates to the target
@@ -107,7 +109,8 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
      next to `todo`.
 10. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
    a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
-   - Confirm each card with tasks shows a collapsed **▸ Show tasks** footer.
+   - Confirm each card with tasks shows a collapsed footer with a chevron icon (hover:
+     "Show tasks"; "Hide tasks" once expanded).
    - Expand it. Confirm tasks appear in file order with their nesting, the link renders,
      and the list scrolls past about 10 tasks.
    - Clicking the toggle, a checkbox, or the list body must not open the note.
@@ -115,7 +118,8 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
      progress figures update, and the list stays expanded after the board refreshes.
    - Click the link and confirm it opens the linked note.
    - Drag the card by its title while the list is expanded and confirm it still moves.
-   - Turn **Show task list** off in the view options and confirm every footer disappears.
+   - Turn **Show task list** off in the view options. Confirm the chevron and the list
+     disappear, while the active-task count and the progress bar stay.
 
 ## Rebuild/reload loop
 

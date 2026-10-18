@@ -1,6 +1,9 @@
 ---
 status:
   - todo
+tags:
+  - mobile
+  - Mobile
 ---
 
 # Mobile App

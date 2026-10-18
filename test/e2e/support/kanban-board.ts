@@ -24,7 +24,9 @@ export async function openBase(path: string): Promise<void> {
 
 export interface BoardCard {
 	title: string;
-	/** null when the card has no `clar-kanban-card__meta` block (no tasks in the note). */
+	/** Tag pill texts, without the `#`; empty when the card has no `clar-kanban-card__meta` block. */
+	tags: string[];
+	/** null when the card has no `clar-kanban-card__tasks` section (no tasks in the note). */
 	activeTasks: number | null;
 	progressPercent: number | null;
 }
@@ -32,6 +34,10 @@ export interface BoardCard {
 export interface BoardColumn {
 	label: string;
 	cards: BoardCard[];
+}
+
+function stripHash(tag: string): string {
+	return tag.replace(/^#/, '');
 }
 
 function parseCount(text: string): number {
@@ -53,16 +59,18 @@ export async function readBoard(): Promise<BoardColumn[]> {
 		const label = await columnEl.$('.clar-kanban-column__title').getText();
 		const cards = await columnEl.$$('.clar-kanban-card').map(async (cardEl) => {
 			const title = await cardEl.$('.clar-kanban-card__title').getText();
-			const metaEl = cardEl.$('.clar-kanban-card__meta');
-			if (!(await metaEl.isExisting())) {
-				return { title, activeTasks: null, progressPercent: null };
+			const tags = await cardEl.$$('.clar-kanban-card__tag').map((tagEl) => tagEl.getText());
+			const tasksEl = cardEl.$('.clar-kanban-card__tasks');
+			if (!(await tasksEl.isExisting())) {
+				return { title, tags: tags.map(stripHash), activeTasks: null, progressPercent: null };
 			}
-			const activeTasksText = await metaEl.$('.clar-kanban-card__active-tasks').getText();
-			const progressText = await metaEl.$('.clar-kanban-card__progress').getText();
+			const activeTasksText = await tasksEl.$('.clar-kanban-card__active-tasks').getText();
+			const progressText = await tasksEl.$('.clar-kanban-card__progress').getAttribute('data-progress');
 			return {
 				title,
+				tags: tags.map(stripHash),
 				activeTasks: parseCount(activeTasksText),
-				progressPercent: parseCount(progressText),
+				progressPercent: parseCount(progressText ?? ''),
 			};
 		});
 		return { label, cards };
@@ -287,17 +295,22 @@ export async function readBoardTolerant(): Promise<BoardColumn[] | null> {
 			const cards: BoardCard[] = [];
 			for (const cardEl of await columnEl.$$('.clar-kanban-card').getElements()) {
 				const title = await cardEl.$('.clar-kanban-card__title').getText();
-				const metaEl = cardEl.$('.clar-kanban-card__meta');
-				if (!(await metaEl.isExisting())) {
-					cards.push({ title, activeTasks: null, progressPercent: null });
+				const tags: string[] = [];
+				for (const tagEl of await cardEl.$$('.clar-kanban-card__tag').getElements()) {
+					tags.push(stripHash(await tagEl.getText()));
+				}
+				const tasksEl = cardEl.$('.clar-kanban-card__tasks');
+				if (!(await tasksEl.isExisting())) {
+					cards.push({ title, tags, activeTasks: null, progressPercent: null });
 					continue;
 				}
-				const activeTasksText = await metaEl.$('.clar-kanban-card__active-tasks').getText();
-				const progressText = await metaEl.$('.clar-kanban-card__progress').getText();
+				const activeTasksText = await tasksEl.$('.clar-kanban-card__active-tasks').getText();
+				const progressText = await tasksEl.$('.clar-kanban-card__progress').getAttribute('data-progress');
 				cards.push({
 					title,
+					tags,
 					activeTasks: parseCount(activeTasksText),
-					progressPercent: parseCount(progressText),
+					progressPercent: parseCount(progressText ?? ''),
 				});
 			}
 			columns.push({ label, cards });
@@ -371,6 +384,77 @@ export async function readTaskList(cardTitle: string): Promise<TaskListSnapshot 
 			items,
 		};
 	}, cardTitle);
+}
+
+export interface CardStyleSnapshot {
+	/** Tag pill texts as rendered (with `#`); empty when there's no meta block. */
+	tags: string[];
+	hasMeta: boolean;
+	hasTaskSection: boolean;
+	/** The task-list toggle, or null when it isn't rendered (option off, or no tasks). */
+	toggle: { text: string; hasIcon: boolean; ariaLabel: string | null; expanded: string | null } | null;
+	activeTasks: { count: string; hasIcon: boolean; ariaLabel: string | null } | null;
+	progress: { valueNow: string | null; fillRatio: number; sectionPosition: number } | null;
+}
+
+/**
+ * Snapshot of a card's meta and task-section styling, in one in-page
+ * `execute` call (see `readTaskList()` for why). `fillRatio` is the rendered
+ * fill width over the bar's width (0..1). Returns null if the card isn't rendered.
+ */
+export async function readCardStyle(cardTitle: string): Promise<CardStyleSnapshot | null> {
+	return browser.execute((title) => {
+		const card = Array.from(document.querySelectorAll('.clar-kanban-card')).find(
+			(el) => el.querySelector('.clar-kanban-card__title')?.textContent === title,
+		);
+		if (!card) {
+			return null;
+		}
+		const meta = card.querySelector('.clar-kanban-card__meta');
+		const section = card.querySelector('.clar-kanban-card__tasks');
+		const toggle = section?.querySelector('.clar-kanban-card__tasks-toggle');
+		const active = section?.querySelector('.clar-kanban-card__active-tasks');
+		const progress = section?.querySelector('.clar-kanban-card__progress');
+		const fill = progress?.querySelector('.clar-kanban-card__progress-fill');
+		const barWidth = progress?.getBoundingClientRect().width ?? 0;
+		return {
+			tags: Array.from(card.querySelectorAll('.clar-kanban-card__tag')).map((el) => el.textContent ?? ''),
+			hasMeta: meta !== null,
+			hasTaskSection: section !== null && section !== undefined,
+			toggle: toggle
+				? {
+						text: toggle.textContent?.trim() ?? '',
+						hasIcon: toggle.querySelector('svg') !== null,
+						ariaLabel: toggle.getAttribute('aria-label'),
+						expanded: toggle.getAttribute('aria-expanded'),
+					}
+				: null,
+			activeTasks: active
+				? {
+						count: active.querySelector('.clar-kanban-card__active-tasks-count')?.textContent ?? '',
+						hasIcon: active.querySelector('svg') !== null,
+						ariaLabel: active.getAttribute('aria-label'),
+					}
+				: null,
+			progress: progress
+				? {
+						valueNow: progress.getAttribute('aria-valuenow'),
+						fillRatio: barWidth > 0 ? (fill?.getBoundingClientRect().width ?? 0) / barWidth : 0,
+						sectionPosition: section?.indexOf(progress),
+					}
+				: null,
+		};
+	}, cardTitle);
+}
+
+/** Clicks a card's first tag pill. */
+export async function clickTagPill(cardTitle: string): Promise<void> {
+	const cardEl = await findCardElement(cardTitle);
+	const [tagEl] = await cardEl.$$('.clar-kanban-card__tag').getElements();
+	if (!tagEl) {
+		throw new Error(`Card "${cardTitle}" has no tag pills`);
+	}
+	await tagEl.click();
 }
 
 /** Expands a card's task list via its toggle button; a no-op if it's already expanded. */

@@ -97,10 +97,15 @@ describe('Task list in cards (spec 6)', function () {
 		expect((await readTaskList('Long Checklist'))?.scrollable).toBe(true);
 	});
 
-	it('renders no task list when the view option is turned off', async function () {
+	it('renders no task list when the view option is turned off, but keeps the task stats', async function () {
 		await openBase('Task List Hidden.base');
 
 		expect(await readTaskList('Nested Tasks')).toBeNull();
-		expect(await browser.$$('.clar-kanban-card__tasks').length).toBe(0);
+		expect(await browser.$$('.clar-kanban-card__tasks-toggle').length).toBe(0);
+		expect(await browser.$$('.clar-kanban-card__tasks-list').length).toBe(0);
+		// The active-task count and progress bar don't depend on the option.
+		expect(await browser.$$('.clar-kanban-card__tasks').length).toBeGreaterThan(0);
+		expect(await browser.$$('.clar-kanban-card__active-tasks').length).toBeGreaterThan(0);
+		expect(await browser.$$('.clar-kanban-card__progress').length).toBeGreaterThan(0);
 	});
 });

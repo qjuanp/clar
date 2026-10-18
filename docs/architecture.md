@@ -95,17 +95,28 @@ Pure, no DOM, no `App`/`TFile` — unit tested in `task-list.test.ts`.
   that line (`x` or space), preserving indentation and text. It returns `null` if the
   line no longer looks like a task, so a stale toggle aborts instead of corrupting the note.
 
+### `src/basesKanvanView/card-tags.ts`
+Pure, unit tested in `card-tags.test.ts`. `normalizeTags(raw)` takes
+`parseFrontMatterTags()`'s `#`-prefixed list (or `null`). It strips the `#` and drops
+blanks. It also removes case-insensitive duplicates (Obsidian treats tags
+case-insensitively), keeping the first spelling and the file order.
+
 ### `src/basesKanvanView/render.ts`
-`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, onCardMoved, onColumnsReordered,
-taskList)` clears and rebuilds the board from scratch on every call. Renders one
+`renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, getTags, onCardMoved,
+onColumnsReordered, taskList)` clears and rebuilds the board from scratch on every call. Renders one
 `.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
 header holds the `.clar-kanban-column__title` text and, for every real column, a
 `.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical` icon via `setIcon`);
 "No column" has no handle. It also renders one `.clar-kanban-card` per entry with a
-`.clar-kanban-card__title` (`entry.file.basename`) and, only when
-`getTaskStats(entry.file)` returns non-null, a `.clar-kanban-card__meta` block showing
-"Active tasks: N" and "Progress: N%" — notes with zero tasks show just the title. Each
+`.clar-kanban-card__title` (`entry.file.basename`), then:
+- **Tags.** When `getTags(entry.file)` is non-empty, a `.clar-kanban-card__meta` row of
+  `span.tag.clar-kanban-card__tag` pills (`#tag`, Obsidian's own tag look). They are
+  display-only: a click bubbles to the card and opens the note.
+- **Task section.** When `getTaskStats(entry.file)` is non-null, a
+  `.clar-kanban-card__tasks` footer (see below). Notes with zero tasks have no footer.
+
+Each
 card carries a `data-path` attribute (the file's vault path) and each column's card list
 a `data-column-label` attribute; both are plain strings read by the drag handler below,
 keeping this module free of `App`/`TFile` resolution.
@@ -136,11 +147,22 @@ board's columns in DOM order, leaves out "No column", and calls
 `onColumnsReordered(labels)`. Returns every created `Sortable` instance (card lists plus the
 board) so the view can destroy them before the next render.
 
-**Task list section (spec 6).** When `taskList` (a `TaskListRenderOptions`) is non-null
-and the note has tasks, each card gets a `.clar-kanban-card__tasks` footer below the meta
-block. The footer holds a `.clar-kanban-card__tasks-toggle` button ("▸ Show tasks" /
-"▾ Hide tasks", with `aria-expanded`) and a `.clar-kanban-card__tasks-list` body that
-carries `is-collapsed` while closed. The body is filled lazily: `taskList.renderTaskList(file,
+**Task section (specs 2, 6 and the card-style spec).** `renderTaskSection()` builds the
+footer of every card whose note has tasks:
+- A `.clar-kanban-card__tasks-header` row.
+  - On the left is the `.clar-kanban-card__tasks-toggle` button. It is icon-only
+    (`chevron-right` / `chevron-down`), with an `aria-expanded` attribute, and its
+    `aria-label` and `setTooltip()` text read "Show tasks" or "Hide tasks".
+  - On the right is `.clar-kanban-card__active-tasks`: a `square` icon plus the active
+    count, with tooltip "Completed N%".
+- The `.clar-kanban-card__tasks-list` body.
+- `.clar-kanban-card__progress`, the progress bar along the section's bottom edge. It has
+  `role="progressbar"`, `aria-valuenow` and `data-progress`. Its fill width comes from
+  a `--clar-progress` CSS variable set with `setCssProps`.
+
+When `taskList` (a `TaskListRenderOptions`) is `null` ("Show task list" off), the toggle
+and the list body are left out. The count and the bar stay. The list body carries
+`is-collapsed` while closed. The body is filled lazily: `taskList.renderTaskList(file,
 listEl)` is called only when the card is expanded, so collapsed cards never read their
 file or render markdown. Whether a card is expanded comes from `taskList.isExpanded(path)`
 and is reported back via `onToggleExpanded`. The state lives in the view because every
@@ -169,7 +191,10 @@ no property is configured yet, otherwise calls `buildKanbanColumns()` then
 `renderKanbanBoard()`, passing two callbacks: a
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
-pure `getTaskStats()`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
+pure `getTaskStats()`), a `getTags` callback that runs Obsidian's public
+`parseFrontMatterTags(cache.frontmatter)` (frontmatter `tags`/`tag` only, list form; the
+legacy comma-string form isn't recognised by Obsidian 1.14 and so shows no pills) through
+the pure `normalizeTags()`, and `(path, targetColumnLabel) => this.onCardMoved(...)` for
 drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
 `onColumnsReordered` merges the new order with the current option via
 `mergeColumnOrder(parseColumnOrder(config.get('columnOrder')), labels)` and writes it back
@@ -238,6 +263,7 @@ flowchart TD
         render["render.ts<br/>renderKanbanBoard()"]
         updateColumn["update-column.ts<br/>updateEntryColumn()"]
         taskList["task-list.ts<br/>buildTaskTree(), setTaskStatusInContent()"]
+        cardTags["card-tags.ts<br/>normalizeTags()"]
     end
 
     subgraph Core["src/core/"]
@@ -289,7 +315,8 @@ flowchart TD
     view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder')"| ObsBasesViewConfig
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
     view -->|"buildKanbanColumns(entries, groupProperty, columnOrder), mergeColumnOrder(previous, labels)"| columns
-    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, onCardMoved, onColumnsReordered, taskListOptions)"| render
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, getTagsFn, onCardMoved, onColumnsReordered, taskListOptions)"| render
+    view -->|"normalizeTags(parseFrontMatterTags(frontmatter))"| cardTags
     view -->|"app.metadataCache.getFileCache(file)?.listItems ?? []"| ObsMetadataCache
     view -->|"getTaskStats(listItems)"| taskStats
     view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
@@ -380,7 +407,8 @@ base" for free.
   latest-version Obsidian instance via WDIO Obsidian Service against the fixture vault
   in `test/e2e/vaults/kanban/` (copied to a temp dir per run), including drag-and-drop
   coverage in `test/e2e/specs/drag-and-drop.e2e.ts`, column-reorder coverage in
-  `test/e2e/specs/column-reorder.e2e.ts` and task-list coverage in
+  `test/e2e/specs/column-reorder.e2e.ts`, card-style coverage in
+  `test/e2e/specs/card-style.e2e.ts` and task-list coverage in
   `test/e2e/specs/task-list.e2e.ts` (drags are simulated via a manual
   W3C Actions pointer sequence rather than WebdriverIO's built-in `dragAndDrop`, and
   `forceFallback: true` above is what makes that reliable against SortableJS). See
@@ -388,6 +416,9 @@ base" for free.
 - **Task list: only a task's first line is shown.** Continuation lines of a multi-line
   task item aren't included in its text. Ticking a task always writes `x`, and unticking
   writes a space, so a custom status character (e.g. `[-]`) becomes `[ ]` once unticked.
+- **Task stats and the progress bar don't react to clicks.** They sit inside the task
+  footer, which stops click propagation. Clicking the count or the bar does nothing,
+  rather than opening the note.
 - **Task list: the footer is not a drag handle.** Pressing inside a card's task-list
   section never starts a drag (see `render.ts`'s Sortable `filter`). Drag the card by its
   title or meta area instead.

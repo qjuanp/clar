@@ -34,6 +34,7 @@ it for real):
 | `constants.ts` | View type id, config option keys, "No column" id/label |
 | `columns.ts` | Pure: groups `BasesEntry[]` into `KanbanColumn[]` by a property's first list value |
 | `task-stats.ts` | Pure: active-task count + rounded progress % from `ListItemCache[]` |
+| `card-tags.ts` | Pure: normalizes `parseFrontMatterTags()` output into the card's tag pills (strip `#`, dedupe case-insensitively) |
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
 | `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
 | `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
@@ -108,7 +109,7 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 - `obsidian` is aliased in `vitest.config.ts` to `test/unit/mocks/obsidian.ts`
   — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
   `StringValue` (the real `obsidian` package ships types only, no runtime).
-- Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`,
+- Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
   `update-column.ts`'s `buildFrontmatterListValue`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force

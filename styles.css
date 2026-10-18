@@ -91,26 +91,69 @@ scope for this pass, these rules just make columns/cards legible.
 }
 
 .clar-kanban-card__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
 	margin-top: 4px;
+}
+
+.clar-kanban-card__tag {
 	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
+	cursor: inherit;
 }
 
 .clar-kanban-card__tasks {
 	margin-top: 6px;
-	padding-top: 4px;
-	border-top: 1px solid var(--background-modifier-border);
 	cursor: default;
 }
 
-.clar-kanban-card__tasks-toggle {
-	padding: 0 4px;
-	height: auto;
+.clar-kanban-card__tasks-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-height: var(--icon-s);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
-	background: none;
-	box-shadow: none;
-	cursor: pointer;
+}
+
+.clar-kanban-card__tasks-toggle {
+	padding: 2px;
+}
+
+.clar-kanban-card__tasks-toggle svg {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
+.clar-kanban-card__active-tasks {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	margin-inline-start: auto;
+}
+
+.clar-kanban-card__active-tasks-icon {
+	display: flex;
+}
+
+.clar-kanban-card__active-tasks-icon svg {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
+}
+
+/* Progress bar drawn as the section's bottom border; width comes from --clar-progress. */
+.clar-kanban-card__progress {
+	height: 3px;
+	margin-top: 4px;
+	border-radius: 2px;
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.clar-kanban-card__progress-fill {
+	width: var(--clar-progress, 0%);
+	height: 100%;
+	background-color: var(--interactive-accent);
 }
 
 .clar-kanban-card__tasks-list {
