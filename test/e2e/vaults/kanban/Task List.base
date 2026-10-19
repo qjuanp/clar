@@ -4,5 +4,9 @@ filters:
 views:
   - type: clar-kanban
     name: Task list board
-    groupProperty: note.status
-    columnOrder: "todo, in-progress"
+    groupBy:
+      property: note.status
+      direction: ASC
+    groupOrder:
+      - [todo]
+      - [in-progress]

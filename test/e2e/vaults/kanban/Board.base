@@ -4,6 +4,13 @@ filters:
 views:
   - type: clar-kanban
     name: Ordered board
-    groupProperty: note.status
-    columnOrder: "todo, in-progress, done, cancelled"
+    groupBy:
+      property: note.status
+      direction: ASC
+    groupOrder:
+      - [todo]
+      - [in-progress]
+      - [done]
+      - [cancelled]
+      - null
     showTags: true

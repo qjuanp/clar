@@ -3,10 +3,10 @@
 ## Project overview
 
 Clár is an Obsidian community plugin that adds a custom **Bases** view type
-(`clar-kanban`, "Kanban board"). It groups a base's already-filtered notes into
-columns by a chosen list-type frontmatter property and lets cards be dragged
-between columns, writing the target column's value back into the note's
-frontmatter on drop.
+(`clar-kanban`, "Kanban board"). Its columns are the groups of the base's own
+**Group by** toolbar option (spec 12): same property, same grouping, same order.
+Cards can be dragged between columns, writing the target column's value back
+into the note's frontmatter on drop, and columns can be dragged to reorder them.
 
 - Entry point: `src/main.ts` → `ClarPlugin`. It loads and saves the global settings,
   adds the settings tab, notifies open boards when settings change
@@ -21,8 +21,9 @@ frontmatter on drop.
   - `settings-tab.ts` is UI only (`PluginSettingTab`).
   Per-board options stay in Bases view options (`view-options.ts`). The tab uses
   `display()`, which is deprecated since Obsidian 1.13. The declarative
-  `getSettingDefinitions()` would need `minAppVersion` raised from 1.10.0 to 1.13.0, so
-  there is one commented lint suppression for it in `settings-tab.ts`.
+  `getSettingDefinitions()` needs Obsidian 1.13.0. `minAppVersion` is now 1.14.3, so the
+  migration is possible but not done yet; there is one commented lint suppression for it
+  in `settings-tab.ts`.
 
 Full design docs: [`docs/architecture.md`](docs/architecture.md) (module-by-module
 breakdown + a dependency diagram) and [`docs/dev.md`](docs/dev.md) (manual test
@@ -39,24 +40,27 @@ it for real):
 | File | Responsibility |
 |---|---|
 | `constants.ts` | View type id, config option keys, "No column" id/label |
-| `columns.ts` | Pure: groups `BasesEntry[]` into `KanbanColumn[]` by a property's first list value |
+| `columns.ts` | Pure: turns Bases' `groupedData` into `KanbanColumn[]` (Bases order, keyless group → "No column") and merges a dragged column order with the stored group order |
 | `task-stats.ts` | Pure: active-task count + rounded progress % from `ListItemCache[]` |
 | `card-tags.ts` | Pure: normalizes `parseFrontMatterTags()` output into the card's tag pills (strip `#`, dedupe case-insensitively) |
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
-| `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
-| `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
+| `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter`; pure `valueToFrontmatter` converts a group key the way Bases stores it |
+| `bases-group.ts` | Reads the "Group by" property and manual group order, and saves a new order (uses the view config's undocumented `groupBy` / `groupOrder` / `setGroupOrder`, degrades gracefully) |
 | `card-age.ts` | Pure: decides a card's recent / stale indicators from `file.stat` ctime/mtime + settings + the column's stale switch, and formats the "Not updated for …" relative time |
 | `stale-columns.ts` | Pure: per-column "Show stale icon" switch (spec 11) — parses / updates the board's hidden `staleColumns` config list, keyed by column label (or `NO_COLUMN_ID`) |
 | `tag-search.ts` | Opens Obsidian search for `tag:#<tag>` when a tag pill is clicked (uses the undocumented core Search plugin via `app.internalPlugins`, returns `false` on failure) |
-| `view-options.ts` | Declares the Bases view-config controls (column property, column order, show task list) |
+| `view-options.ts` | Declares the Bases view-config controls (show task list, show tags); columns come from "Group by" |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
 | `render.ts` | DOM rendering + SortableJS wiring (drag-and-drop between columns) |
 | `view.ts` | `KanbanBasesView extends BasesView` — orchestrates data → columns → render, drop handling, click-to-open |
 
-Column derivation reads only the **first item** of a list-type property per
-note (`columns.ts`'s `resolveColumnLabel`) — this is a deliberate, documented
-simplification, not a bug. Writing back on drop replaces the whole array with
-a single-item `[newLabel]`, matching that read model.
+Columns are exactly Bases' groups, which compare **whole** values: a note with
+`status: [in-progress, launch]` gets its own column. A drop writes the target
+column's whole group key (a list stays a list, text stays text). A column drag
+saves Bases' manual group order, which switches "Group by" to manual order; in
+that mode Bases hides unlisted values. Both are deliberate (spec 12), not bugs.
+A "Group by" on something that isn't a note property (`file.folder`, formulas)
+turns card dragging off.
 
 ## Development workflow (spec-driven)
 
@@ -118,16 +122,17 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 - Colocated with source: `src/basesKanvanView/*.test.ts`, not under `test/`.
 - `obsidian` is aliased in `vitest.config.ts` to `test/unit/mocks/obsidian.ts`
   — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
-  `StringValue` (the real `obsidian` package ships types only, no runtime).
+  `StringValue`/`NumberValue`/`BooleanValue` (the real `obsidian` package ships
+  types only, no runtime).
 - Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
   `card-age.ts`, `stale-columns.ts`, `src/settings/settings-model.ts`,
-  `update-column.ts`'s `buildFrontmatterListValue`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
+  `update-column.ts`'s `valueToFrontmatter`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force
   Obsidian API mocks into the unit layer for that.
-- Pattern for faking a `BasesEntry`: `{ getValue: () => value } as unknown as
-  BasesEntry` (see `columns.test.ts`) — these functions never touch
-  `entry.file`, only `entry.getValue()`.
+- Pattern for faking a Bases group: `{ key, entries, hasKey: () => … }` (see
+  `group()` in `columns.test.ts`). `buildKanbanColumns` only passes entries
+  through, so a fake entry can be any object cast to `BasesEntry`.
 
 ### E2E tests (WDIO Obsidian Service)
 
@@ -138,7 +143,11 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   must never be mutated by a test.
 - Shared helpers live in `test/e2e/support/kanban-board.ts`: `openBase(path)`,
   `readBoard()` (DOM → `BoardColumn[]`), `dragCardToColumn(cardTitle,
-  columnLabel)`, `readFrontmatterProperty(path, prop)`, `readBoardTolerant()`.
+  columnLabel)`, `readFrontmatterProperty(path, prop)`, `readBoardTolerant()`,
+  `readBaseGroupOrder(path)` / `readBaseViewKey(path, key)` (what a `.base` file
+  stores), `openBaseWithoutCards(path)` for boards that show an empty state.
+- Fixture `.base` files use `groupBy` (and `groupOrder` for a manual order, with
+  list values as `[todo]` and `null` for "No column"), not plugin options.
 - `docs/specs/4_testing.md` states which specs are in e2e scope — update its
   list when adding e2e coverage for a new spec.
 
@@ -175,6 +184,9 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 - **Native menus**: on macOS Obsidian shows `Menu`s natively by default, so they never
   appear in the DOM. Turn the `nativeMenus` app config off before clicking a menu (see
   `toggleColumnStaleIcon` in `kanban-board.ts`).
+- **Column drags can't land after the last column.** The simulated pointer
+  settles just before it. To test placement after a column, seed the order in
+  the `.base` file instead (see the "No column" test in `column-reorder.e2e.ts`).
 - A brief visual "flicker" after a drop (card briefly back in its old column
   before the frontmatter write lands) is an accepted, documented limitation —
   don't try to eliminate it by polling harder; see `docs/architecture.md`'s
@@ -201,9 +213,9 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 
 ## Manifest & versioning
 
-- `manifest.json`: `id: "clar"`, `minAppVersion: "1.10.0"` (required for the
-  Bases plugin-facing view API) — bump this if a change depends on a newer
-  Obsidian API.
+- `manifest.json`: `id: "clar"`, `minAppVersion: "1.14.3"` (required for
+  Bases' manual group order, used for column order since spec 12) — bump this
+  if a change depends on a newer Obsidian API.
 - Bump `version` (SemVer) in `manifest.json`/`package.json` and add an entry
   to `versions.json` mapping plugin version → minimum Obsidian version before
   a release. `npm version patch|minor|major` automates this.

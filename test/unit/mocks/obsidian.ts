@@ -2,8 +2,8 @@
  * Minimal runtime stand-in for the `obsidian` package, which ships type
  * declarations only (no real JS - the real classes are injected by the
  * Obsidian app at plugin-load time). vitest aliases the `obsidian` import to
- * this module (see vitest.config.ts) so that `columns.ts`'s `instanceof
- * ListValue`/`instanceof NullValue` checks have a real class to check
+ * this module (see vitest.config.ts) so that `update-column.ts`'s `instanceof
+ * ListValue`/`NullValue`/`NumberValue`/`BooleanValue` checks have a real class to check
  * against, and so tests can construct matching instances.
  */
 
@@ -29,6 +29,10 @@ export abstract class PrimitiveValue<T> extends NotNullValue {
 }
 
 export class StringValue extends PrimitiveValue<string> {}
+
+export class NumberValue extends PrimitiveValue<number> {}
+
+export class BooleanValue extends PrimitiveValue<boolean> {}
 
 export class NullValue extends Value {
 	toString(): string {

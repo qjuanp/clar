@@ -9,7 +9,7 @@ export function registerKanbanView(plugin: Plugin & SettingsProvider): void {
 		name: '[Clár] Kanban',
 		icon: 'lucide-square-kanban',
 		factory: (controller, containerEl) => new KanbanBasesView(controller, containerEl, plugin),
-		options: createKanbanViewOptions(plugin.app),
+		options: createKanbanViewOptions(),
 	});
 
 	if (!registered) {

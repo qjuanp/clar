@@ -4,7 +4,7 @@ import { NO_COLUMN_ID, NO_COLUMN_LABEL } from './constants';
 import { columnKey, parseStaleColumns, setStaleColumn } from './stale-columns';
 
 function column(id: string, label: string): KanbanColumn {
-	return { id, label, entries: [] };
+	return { id, label, value: id === NO_COLUMN_ID ? null : [label], entries: [] };
 }
 
 describe('parseStaleColumns', () => {

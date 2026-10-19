@@ -1,26 +1,15 @@
-import type { App, BasesAllOptions, BasesViewConfig } from 'obsidian';
+import type { BasesAllOptions, BasesViewConfig } from 'obsidian';
 import { KANBAN_OPTION_KEYS } from './constants';
-import { isListProperty } from './property-type';
 
 /**
- * Options are read back via BasesViewConfig.get()/getAsPropertyId() in the view.
- * A custom "view name" option is deliberately not included here: Bases already
- * gives every view a user-editable name via BasesViewConfig.name.
+ * Options are read back via BasesViewConfig.get() in the view.
+ * Columns and their order come from Bases' own "Group by" toolbar option
+ * (spec 12), so there is no column property or column order option here.
+ * A custom "view name" option is deliberately not included either: Bases
+ * already gives every view a user-editable name via BasesViewConfig.name.
  */
-export function createKanbanViewOptions(app: App): (config: BasesViewConfig) => BasesAllOptions[] {
+export function createKanbanViewOptions(): (config: BasesViewConfig) => BasesAllOptions[] {
 	return () => [
-		{
-			type: 'property',
-			key: KANBAN_OPTION_KEYS.GROUP_PROPERTY,
-			displayName: 'Column property',
-			filter: (prop) => isListProperty(app, prop),
-		},
-		{
-			type: 'text',
-			key: KANBAN_OPTION_KEYS.COLUMN_ORDER,
-			displayName: 'Column order',
-			placeholder: 'e.g. Todo, Doing, Done',
-		},
 		{
 			type: 'toggle',
 			key: KANBAN_OPTION_KEYS.SHOW_TASK_LIST,

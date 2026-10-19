@@ -21,7 +21,7 @@ export function buildTagSearchQuery(tag: string): string {
  * has no way to run a search, so this goes through the core Search plugin's
  * internal `openGlobalSearch()` (`app.internalPlugins` is undocumented) — the
  * same thing clicking a tag inside a note does. Best-effort, like
- * `property-type.ts`: returns false instead of throwing when the plugin is
+ * `bases-group.ts`: returns false instead of throwing when the plugin is
  * disabled or the internal shape has changed, so the caller can tell the user.
  */
 export function openTagSearch(app: App, tag: string): boolean {

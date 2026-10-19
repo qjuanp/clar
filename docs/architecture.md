@@ -3,11 +3,12 @@
 ## Overview
 
 Clár adds a custom [Bases](https://docs.obsidian.md/plugins/guides/bases-view) view type,
-`clar-kanban` ("Kanban board"). It groups a base's already-filtered notes into columns
-by the value of a chosen list-type frontmatter property, using
+`clar-kanban` ("Kanban board"). Its columns are the groups of Bases' own **Group by**
+toolbar option (spec 12): the same property, the same grouping of values and the same
+order (ascending, descending or manual). It uses
 [SortableJS](https://sortablejs.github.io/Sortable/) to let cards be dragged between
 columns — dropping a card writes the target column's value back into the note's
-frontmatter, under the same property used to build the columns.
+frontmatter, under the "Group by" property.
 
 ## Components
 
@@ -91,12 +92,9 @@ Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options
 means the core Bases plugin isn't enabled in the vault.
 
 ### `src/basesKanvanView/view-options.ts`
-Builds the four view-configuration controls exposed in the Bases toolbar, per the specs:
-- **Column property** — a `BasesPropertyOption` ("property" dropdown) filtered via
-  `isListProperty()` so only list-type frontmatter properties are selectable.
-- **Column order** — a `BasesTextOption` for a comma-separated list defining column order.
-  Besides being typed by hand, it is rewritten by the view whenever columns are reordered
-  by drag and drop (see `view.ts` below).
+Builds the two view-configuration controls exposed in the Bases toolbar. There is no
+column property or column order option: since spec 12 the columns come from Bases' own
+**Group by** (see `bases-group.ts`).
 - **Show task list** — a `BasesToggleOption` (`showTaskList`, `default: true`) turning the
   per-card collapsible task list (spec 6) on or off. `config.get()` returns `undefined`
   for a never-touched option, so the view treats only an explicit `false` as "off".
@@ -109,36 +107,42 @@ Bases view (of any type) a user-editable name generically through Bases' own vie
 management UI, so the spec's "Name of the view" requirement is satisfied by the
 platform, not by plugin code.
 
-### `src/basesKanvanView/property-type.ts`
-`isListProperty(app, propertyId)` restricts the dropdown to `note.*` (frontmatter)
-properties whose declared type is Obsidian's list type. Obsidian's public API has no
-documented way to read a property's declared type, so this reaches into
-`app.metadataTypeManager` — an **internal, undocumented API** — via a best-effort,
-try/catch-guarded lookup. If that shape is missing or changes in a future Obsidian
-release, the fallback is to show **all** `note.*` properties in the dropdown, rather
-than hiding all of them, so the feature degrades gracefully instead of breaking.
+### `src/basesKanvanView/bases-group.ts`
+Reads and writes the view's Bases **Group by** (spec 12). The public `BasesViewConfig` only
+exposes the grouped results (`BasesQueryResult.groupedData`), not the group property or the
+manual group order. So this reaches into the config object's **internal, undocumented**
+`groupBy.property`, `groupOrder` and `setGroupOrder(order)`. `setGroupOrder` is the same
+call Bases' own "Group by" menu and its built-in board view make, and it saves the `.base`
+file. The manual group order exists since Obsidian 1.14.3, hence `minAppVersion`.
+- `getGroupProperty(config)` returns the property id, or null when the view isn't grouped.
+- `getGroupOrder(config)` returns the stored order, or null when "Group by" sorts by value.
+- `setGroupOrder(config, order)` returns `false` instead of throwing if the method is gone.
 
-### `src/core/columns.ts`
-Pure functions, no DOM — the easiest part of this feature to verify without a test
-framework (this repo has none; see Verification below). `buildKanbanColumns(entries,
-groupProperty, columnOrder)`:
-- Reads each entry's value via `BasesEntry.getValue(groupProperty)`.
-- `null`/`NullValue`/empty `ListValue`/blank string → routed to a "No column" bucket.
-- Non-empty `ListValue` → uses **only the first value** (`.get(0)`) as the column key.
-  A list property selected here is expected to hold a single value per note in
-  practice; this is a deliberate simplification, not general multi-column duplication.
-- Any other resolved `Value` → uses `.toString()` directly (defensive, in case a
-  selected property resolves to something other than a `ListValue` for a given entry).
-- Column ordering: columns named in the configured `columnOrder` come first (only if
-  they actually have entries), then any other discovered columns in order of first
-  appearance, then "No column" last, always, if non-empty.
+Stored entries are raw frontmatter values, with `null` for the group with no value. Bases
+converts each one through the property's type before matching, so `todo` and `[todo]` both
+match a list group. The plugin writes the list form, as Bases does. Covered by e2e only,
+since it needs a live config.
 
-`mergeColumnOrder(previousOrder, visibleOrder)` builds the `columnOrder` to persist after a
-column drag. It starts from the new on-screen order of real columns and re-inserts any
-label from the previous order that isn't on screen (a configured column that currently
-has no cards) right after the label that preceded it before. A temporarily empty column
-therefore keeps its place in the configuration. Duplicates are dropped. Unit tested in
-`columns.test.ts`.
+### `src/basesKanvanView/columns.ts`
+Pure, unit tested in `columns.test.ts`. `buildKanbanColumns(groups)` turns
+`BasesQueryResult.groupedData` into columns:
+- **Order:** exactly Bases' order. That is the "Group by" direction, with the group with no
+  value last, or the manual group order. A manual order hides unlisted values.
+- **Keys:** Bases groups by the **whole** value (`Value.looseEquals`), so
+  `[in-progress, launch]` is its own column, labelled `in-progress, launch`.
+- **"No column":** the group without a key (`hasKey()` false) gets `NO_COLUMN_ID`, wherever
+  Bases puts it.
+- **Empty groups** are skipped. A repeated label gets a ` (2)` suffix on its id only.
+- **Value:** each column keeps `value`, the group key in frontmatter form from
+  `valueToFrontmatter()`. A dropped card gets it written, and a column drag stores it in
+  the group order.
+
+`mergeColumnOrder(previousOrder, visibleOrder)` builds the group order to save after a
+column drag. It starts from the new on-screen order of column values, "No column" (`null`)
+included, and re-inserts any entry from the previous order that isn't on screen right
+after the entry that preceded it before. Bases leaves listed groups with no cards out of
+`groupedData`, so this keeps a temporarily empty group in the order. Entries compare with
+single-item lists unwrapped, so a stored `todo` and an on-screen `[todo]` are one group.
 
 ### `src/core/task-stats.ts`
 `getTaskStats(listItems: ListItemCache[])` takes the already-parsed list items directly —
@@ -178,14 +182,14 @@ case-insensitively), keeping the first spelling and the file order.
 API has no way to run a search, so it calls the core Search plugin's internal
 `openGlobalSearch(query)` through `app.internalPlugins.getEnabledPluginById('global-search')`.
 That is an **internal, undocumented API**, and it is the same call Obsidian makes when you
-click a tag inside a note. Like `property-type.ts`, the lookup is narrowly typed and
+click a tag inside a note. Like `bases-group.ts`, the lookup is narrowly typed and
 wrapped in try/catch. It returns `false` instead of throwing when the plugin is disabled
 or the shape has changed. `buildTagSearchQuery` is unit tested in `tag-search.test.ts`.
 
 ### `src/basesKanvanView/render.ts`
 `renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, getCardAge, tags, onCardMoved,
 onColumnsReordered, taskList, columnMenu)` clears and rebuilds the board from scratch on every call. Renders one
-`.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
+`.clar-kanban-column` per column (carrying `data-column-id`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
 header holds the `.clar-kanban-column__title` text, then (when `columnMenu` is non-null) a
 `button.clar-kanban-column__menu` "Column options" button (`more-horizontal` icon), then, for
@@ -207,7 +211,7 @@ column, so the view can apply the per-column stale switch. It also renders one `
 
 Each
 card carries a `data-path` attribute (the file's vault path) and each column's card list
-a `data-column-label` attribute; both are plain strings read by the drag handler below,
+a `data-column-id` attribute; both are plain strings read by the drag handler below,
 keeping this module free of `App`/`TFile` resolution.
 
 Each column's card list gets a `new Sortable(cardsEl, { group, animation: 0,
@@ -217,23 +221,22 @@ bucket, which sets `group: { name: 'clar-kanban-cards', put: false }` — it can
 drops (see Known limitations), only let cards be dragged *out* of it. `forceFallback`
 makes SortableJS drive the drag off plain pointer events instead of native HTML5 DnD.
 `onEnd` is a no-op when a card is dropped back into its origin column (no ordering is
-persisted); otherwise it reads `data-path`/`data-column-label` straight off the DOM and
-calls `onCardMoved(path, targetColumnLabel)`.
+persisted); otherwise it reads `data-path`/`data-column-id` straight off the DOM and
+calls `onCardMoved(path, targetColumnId)`. When `onCardMoved` is `null` (a "Group by"
+property that can't be written), every card Sortable is created `disabled`.
 
 **Column reordering.** One more `Sortable` sits on `boardEl` itself, in its own
 `'clar-kanban-columns'` group so cards and columns never mix: `draggable:
 '.clar-kanban-column'`, `handle: '.clar-kanban-column__handle'`, `direction: 'horizontal'`,
 `forceFallback: true`. Only the handle starts a column drag, so pressing a card or the
-title text never moves a column. "No column" stays last for two reasons:
-- It has no handle, so it can never be dragged. This is deliberately not done with a
-  `filter`, which would `preventDefault` every press inside that column, including on its
-  cards.
-- `onMove` refuses any position after it (`evt.related` is "No column" and
-  `willInsertAfter`).
+title text never moves a column. "No column" has no handle, so it can never be dragged.
+This is deliberately not done with a `filter`, which would `preventDefault` every press
+inside that column, including on its cards. Its place follows the Bases group order, so
+other columns can land on either side of it.
 
-When the column's index changed, `onEnd` reads the `data-column-label` values of the
-board's columns in DOM order, leaves out "No column", and calls
-`onColumnsReordered(labels)`. Returns every created `Sortable` instance (card lists plus the
+When the column's index changed, `onEnd` reads the `data-column-id` values of all the
+board's columns in DOM order, "No column" included, and calls
+`onColumnsReordered(columnIds)`. Returns every created `Sortable` instance (card lists plus the
 board) so the view can destroy them before the next render.
 
 **Task section (specs 2, 6 and the card-style spec).** `renderTaskSection()` builds the
@@ -262,25 +265,27 @@ section never starts a drag and checkboxes, links and the list's scrollbar keep 
 The list's `max-height` (in `styles.css`) fits about 10 single-line tasks before it scrolls.
 
 ### `src/basesKanvanView/update-column.ts`
-`updateEntryColumn(app, file, groupProperty, newColumnLabel)` is the only place that
-writes frontmatter: it resolves the plain property name via `parsePropertyId(groupProperty)`
-(same helper `property-type.ts` uses to go the other direction) and calls
-`app.fileManager.processFrontMatter(file, fn)` — Obsidian's documented API for safely
-editing a note's frontmatter block — setting `frontmatter[name]` to a new single-item
-array via `buildFrontmatterListValue(newColumnLabel)`. The write always replaces the
-whole array rather than only touching index 0, matching `columns.ts`'s own "first value
-only" read model — any extra values beyond index 0 on the original property are dropped.
+`updateEntryColumn(app, file, groupProperty, targetValue)` is the only place that writes
+the group property. It resolves the plain property name via `parsePropertyId()` and calls
+`app.fileManager.processFrontMatter(file, fn)`, Obsidian's documented API for safely
+editing a note's frontmatter block, setting `frontmatter[name]` to `targetValue`. That value
+is the target column's whole group key, so the note lands in exactly that group: a list
+group writes a list, a text group writes a string.
+
+`valueToFrontmatter(value)` (pure, unit tested) converts a group key the way Bases stores
+one. A `ListValue` becomes an array, item by item. `NumberValue` and `BooleanValue` keep
+their type, `NullValue` becomes `null`, and anything else is written as its text form.
 
 ### `src/basesKanvanView/view.ts`
 `KanbanBasesView extends BasesView`. Its constructor takes a `SettingsProvider` (the
 plugin) and registers an `onSettingsChange` listener. That listener re-runs
 `onDataUpdated()` once the view has rendered at least once, so card indicators follow
 settings changes straight away. `onDataUpdated()` (the one method Bases requires)
-is where re-rendering happens: it reads `groupProperty` via
-`this.config.getAsPropertyId('groupProperty')` and `columnOrder` via
-`this.config.get('columnOrder')` (comma-split/trimmed), shows an empty-state prompt if
-no property is configured yet, otherwise calls `buildKanbanColumns()` then
-`renderKanbanBoard()`, passing two callbacks: a
+is where re-rendering happens: it reads the "Group by" property via
+`getGroupProperty(this.config)`, shows the prompt 'Set "Group by" in the base toolbar to
+build columns.' if there is none, otherwise calls
+`buildKanbanColumns(this.data.groupedData)`, keeps the columns by id for drops and column
+reorders, then calls `renderKanbanBoard()`, passing a
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
 pure `getTaskStats()`), a `getCardAge` callback, which calls
@@ -289,8 +294,10 @@ pure `getTaskStats()`), a `getCardAge` callback, which calls
 `parseStaleColumns(config.get('staleColumns'))`, `ColumnMenuOptions` only when the global
 stale setting is on (the menu's only item is the stale switch, so the button is hidden while
 it is off and the saved per-column choice is kept), `TagRenderOptions` only when `showTags` is explicitly `true`
-(otherwise `null`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
-drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
+(otherwise `null`), `(path, columnId) => this.onCardMoved(...)` for drag-and-drop drops,
+only when the property is a `note.*` property (a group by `file.folder` or a formula can't
+be written, so it passes `null`), and `(columnIds) => this.onColumnsReordered(columnIds)`
+for column reorders.
 `TagRenderOptions` (from `tagOptions()`) has two callbacks:
 - `getTags`: runs Obsidian's public `parseFrontMatterTags(cache.frontmatter)` through the
   pure `normalizeTags()`. Only frontmatter `tags`/`tag` count, in list form. Obsidian 1.14
@@ -300,14 +307,14 @@ drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for colum
 `ColumnMenuOptions.onToggleStale` re-reads the stored list, writes
 `setStaleColumn(current, columnKey(column), shown)` back with
 `this.config.set('staleColumns', ...)` (a YAML list, so labels with commas work), and
-re-renders. Bases persists it to the `.base` file like `columnOrder`.
-`onColumnsReordered` merges the new order with the current option via
-`mergeColumnOrder(parseColumnOrder(config.get('columnOrder')), labels)` and writes it back
-with `this.config.set('columnOrder', merged.join(', '))`. That is the same comma-separated text
-users type, so the **Column order** field shows the new order. Bases persists the change
-to the `.base` file on its own (debounced, about 2s in testing). The DOM already shows the
-new order, so the re-render that follows rebuilds the same layout. `onCardMoved` resolves the dropped file via
-`app.vault.getAbstractFileByPath(path)`, re-reads the current `groupProperty`, and calls
+re-renders. Bases persists it to the `.base` file.
+`onColumnsReordered` maps the ids to column values and merges them with the current
+manual order via `mergeColumnOrder(getGroupOrder(config) ?? [], values)`, then calls
+`setGroupOrder(config, merged)`. That is the list the "Group by" menu edits, so both stay in
+sync, and a drag switches "Group by" to manual order. Bases persists the change to the
+`.base` file (debounced, about 2s in testing). If `setGroupOrder` fails it shows a `Notice`
+and re-renders. `onCardMoved` resolves the dropped file via
+`app.vault.getAbstractFileByPath(path)`, looks up the target column's `value`, and calls
 `updateEntryColumn(...)`, catching any rejection into a `console.error` plus an Obsidian
 `Notice` — there's no manual DOM revert on failure; the next metadata-driven re-render is
 what reconciles the DOM either way. `onunload()` destroys any tracked `Sortable`
@@ -368,7 +375,7 @@ flowchart TD
     subgraph BasesKanvanView["src/basesKanvanView/"]
         register["register-view.ts<br/>registerKanbanView()"]
         viewOptions["view-options.ts<br/>createKanbanViewOptions()"]
-        propType["property-type.ts<br/>isListProperty()"]
+        basesGroup["bases-group.ts<br/>getGroupProperty(), getGroupOrder(), setGroupOrder()"]
         view["view.ts<br/>KanbanBasesView"]
         render["render.ts<br/>renderKanbanBoard()"]
         updateColumn["update-column.ts<br/>updateEntryColumn()"]
@@ -391,12 +398,11 @@ flowchart TD
         ObsRegisterView["Plugin.registerBasesView()"]
         ObsBasesView["BasesView (base class)"]
         ObsQueryController["QueryController"]
-        ObsBasesViewConfig["BasesViewConfig (this.config)"]
-        ObsBasesQueryResult["BasesQueryResult (this.data.data)"]
-        ObsBasesEntry["BasesEntry.getValue()"]
+        ObsBasesViewConfig["BasesViewConfig (this.config; groupBy / groupOrder / setGroupOrder are internal)"]
+        ObsBasesQueryResult["BasesQueryResult (this.data.groupedData)"]
+        ObsBasesEntry["BasesEntryGroup (key, entries, hasKey())"]
         ObsWorkspace["App.workspace"]
         ObsMetadataCache["App.metadataCache"]
-        ObsMetadataTypeManager["App.metadataTypeManager (internal, undocumented)"]
         ObsInternalPlugins["App.internalPlugins → global-search.openGlobalSearch() (internal, undocumented)"]
         ObsParsePropertyId["parsePropertyId()"]
         ObsTFile["TFile"]
@@ -422,22 +428,21 @@ flowchart TD
     cardAge -->|"timeframeToMs()"| settingsModel
 
     register -->|"plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })"| ObsRegisterView
-    register -->|"createKanbanViewOptions(plugin.app)"| viewOptions
+    register -->|"createKanbanViewOptions()"| viewOptions
     register -->|"factory(controller, containerEl) => new KanbanBasesView(...)"| view
 
-    viewOptions -->|"isListProperty(app, propertyId)"| propType
     viewOptions -.->|imports| constants
 
-    propType -->|"parsePropertyId(propertyId)"| ObsParsePropertyId
-    propType -->|"app.metadataTypeManager.properties[name].type"| ObsMetadataTypeManager
+    basesGroup -->|"config.groupBy.property, config.groupOrder, config.setGroupOrder(order) (internal)"| ObsBasesViewConfig
 
     view -->|"extends BasesView(controller)"| ObsBasesView
     view -->|"constructor(controller, containerEl)"| ObsQueryController
     view -.->|imports| constants
-    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder' / 'staleColumns')"| ObsBasesViewConfig
+    view -->|"this.config.get/set('staleColumns' / 'showTags' / 'showTaskList')"| ObsBasesViewConfig
+    view -->|"getGroupProperty(config), getGroupOrder(config), setGroupOrder(config, order)"| basesGroup
     view -->|"parseStaleColumns(raw), setStaleColumn(keys, key, shown), columnKey(column)"| staleColumns
-    view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
-    view -->|"buildKanbanColumns(entries, groupProperty, columnOrder), mergeColumnOrder(previous, labels)"| columns
+    view -->|"this.data.groupedData : BasesEntryGroup[]"| ObsBasesQueryResult
+    view -->|"buildKanbanColumns(groups), mergeColumnOrder(previous, values)"| columns
     view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, getCardAgeFn, tagOptions, onCardMoved, onColumnsReordered, taskListOptions, columnMenuOptions)"| render
     view -->|"openTagSearch(app, tag)"| tagSearch
     tagSearch -->|"getEnabledPluginById('global-search').openGlobalSearch('tag:#x')"| ObsInternalPlugins
@@ -446,35 +451,37 @@ flowchart TD
     view -->|"getTaskStats(listItems)"| taskStats
     view -->|"this.app.workspace.getLeaf(false).openFile(file)"| ObsWorkspace
     view -->|"this.app.metadataCache.on('changed', cb)"| ObsMetadataCache
-    view -->|"onCardMoved(path, targetColumnLabel)"| ObsVault
-    view -->|"updateEntryColumn(app, file, groupProperty, targetColumnLabel)"| updateColumn
+    view -->|"onCardMoved(path, targetColumnId)"| ObsVault
+    view -->|"updateEntryColumn(app, file, groupProperty, column.value)"| updateColumn
     view -->|"new Notice(...) on failure"| ObsNotice
     view -->|"buildTaskTree(listItems, content), setTaskStatusInContent(content, line, done)"| taskList
     view -->|"cachedRead(file), process(file, fn)"| ObsVaultContent
     view -->|"MarkdownRenderer.render(app, text, el, path, component)"| ObsMarkdownRenderer
 
     columns -.->|imports| constants
-    columns -->|"entry.getValue(groupProperty) : Value"| ObsBasesEntry
+    columns -->|"group.key, group.hasKey(), group.entries"| ObsBasesEntry
+    columns -->|"valueToFrontmatter(key)"| updateColumn
 
     render -.->|imports| constants
     render -->|"onOpenFile(entry.file: TFile)"| ObsTFile
-    render -->|"new Sortable(cardsEl, { group, forceFallback: true, filter, onEnd }), new Sortable(boardEl, { handle, onMove, onEnd })"| Sortable
+    render -->|"new Sortable(cardsEl, { group, forceFallback: true, filter, onEnd }), new Sortable(boardEl, { handle, onEnd })"| Sortable
 
     updateColumn -->|"parsePropertyId(groupProperty)"| ObsParsePropertyId
     updateColumn -->|"app.fileManager.processFrontMatter(file, fn)"| ObsFileManager
 
     classDef obsidian stroke-dasharray: 5 5;
-    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsMetadataTypeManager,ObsParsePropertyId,ObsTFile,ObsInternalPlugins,ObsPluginSettingTab obsidian;
+    class ObsPluginBase,ObsRegisterView,ObsBasesView,ObsQueryController,ObsBasesViewConfig,ObsBasesQueryResult,ObsBasesEntry,ObsWorkspace,ObsMetadataCache,ObsParsePropertyId,ObsTFile,ObsInternalPlugins,ObsPluginSettingTab obsidian;
     classDef external stroke-dasharray: 2 2;
     class Sortable external;
 ```
 Reading this as "what Clár expects Obsidian to provide": a `Plugin` base class with
 `registerBasesView()`; a `BasesView` base class constructed with a `QueryController`;
-per-view `BasesViewConfig` (`get`/`getAsPropertyId`/`set`) and `BasesQueryResult`
-(`this.data.data`) objects supplied by the Bases engine on every render; `BasesEntry`
-objects with `getValue()`; `App.workspace` and `App.metadataCache` (both public API); the
-`parsePropertyId()` helper and `TFile` type; and, as the one undocumented exception,
-`App.metadataTypeManager` (see Known limitations below). `src/core/task-stats.ts` is
+per-view `BasesViewConfig` (`get`/`set`) and `BasesQueryResult` (`this.data.groupedData`)
+objects supplied by the Bases engine on every render; `BasesEntryGroup` objects with a
+`key`, `entries` and `hasKey()`; `App.workspace` and `App.metadataCache` (both public API);
+the `parsePropertyId()` helper and `TFile` type; and, as undocumented exceptions, the view
+config's `groupBy`, `groupOrder` and `setGroupOrder()` plus `App.internalPlugins` (see
+Known limitations below). `src/core/task-stats.ts` is
 deliberately absent from that list — `view.ts` resolves the Obsidian-specific
 `app.metadataCache.getFileCache(file)?.listItems` lookup itself and passes plain
 `ListItemCache[]` data in, so `core/` has zero Obsidian API dependencies.
@@ -485,7 +492,7 @@ deliberately absent from that list — `view.ts` resolves the Obsidian-specific
 Bases engine (base-level filters/sort applied)
         │
         ▼
-BasesQueryResult.data  (BasesEntry[] — already filtered/sorted for the whole base)
+BasesQueryResult.groupedData  (BasesEntryGroup[] — filtered, sorted and grouped by "Group by")
         │
         ▼
 KanbanBasesView.onDataUpdated()
@@ -500,11 +507,11 @@ renderKanbanBoard()  →  DOM (+ inert Sortable per column, + one for the column
 A settings change also re-renders: `ClarPlugin.updateSettings()` → `onSettingsChange`
 listeners → `onDataUpdated()` on every open board.
 
-A column drag runs the other way: `onColumnsReordered()` → `config.set('columnOrder')` →
+A column drag runs the other way: `onColumnsReordered()` → `setGroupOrder(config, order)` →
 Bases saves the `.base` file → the next `onDataUpdated()` renders with the new order.
 
-Because `BasesView.data.data` is already filtered and sorted by Bases for the whole
-base, the Kanban view does not implement any of its own filtering logic — this
+Because `BasesView.data.groupedData` is already filtered, sorted and grouped by Bases for
+the whole base, the Kanban view does not implement any of its own filtering logic — this
 satisfies the spec's "should incorporate already the filters defined for the whole
 base" for free.
 
@@ -526,19 +533,27 @@ base" for free.
 - **Timeframes treat a month as 30 days**, both for the golden rule (e.g. 12 months <
   53 weeks) and for the "Not updated for N months" text.
 - **The settings tab uses the deprecated `display()`.** The declarative
-  `getSettingDefinitions()` replacement needs Obsidian 1.13. `minAppVersion` is still
-  1.10.0, so `settings-tab.ts` keeps `display()` behind one commented lint suppression.
-  Migrate once `minAppVersion` is raised.
+  `getSettingDefinitions()` replacement needs Obsidian 1.13. Spec 12 raised `minAppVersion`
+  to 1.14.3, so the migration is now possible, but `settings-tab.ts` still keeps `display()`
+  behind one commented lint suppression until someone does it.
 
-- **`app.metadataTypeManager` is internal/undocumented.** The list-type filter for the
-  property dropdown depends on it; if Obsidian changes or removes this internal, the
-  dropdown falls back to showing all frontmatter properties rather than failing.
+- **"Group by" access is internal/undocumented.** The group property, the manual group
+  order and `setGroupOrder()` are not in the public API (see `bases-group.ts`). If Obsidian
+  changes them, a board shows the "Set Group by" prompt, and a column drag shows a
+  `Notice` instead of saving.
+- **A column drag switches "Group by" to manual order.** In manual order Bases shows only
+  the listed values. A value that appears later, such as a new status, stays hidden on the
+  board and in other views until it is added in the "Group by" menu. Listed values with no
+  notes are not shown as empty columns.
+- **Whole-value grouping.** Bases groups by the whole property value, so a note with
+  `status: [in-progress, launch]` gets its own column. Dropping a card writes the target
+  column's whole value.
+- **Cards don't move when "Group by" isn't a note property.** A group by `file.folder`, a
+  file property or a formula can't be written to a note, so card dragging is turned off.
 - **Tag search uses `app.internalPlugins` (internal/undocumented).** Clicking a tag pill
   depends on the core Search plugin's `openGlobalSearch()`. If that plugin is disabled, or
   Obsidian changes the internal, the click shows a `Notice` instead of searching. The
   e2e suite covers the working path only; the `Notice` fallback is not automated.
-- **First-value-only for multi-value lists.** If a selected list property holds more
-  than one value on a given note, only the first value determines its column.
 - **Dropping a card can briefly "flicker".** The frontmatter write triggered by a drop
   is asynchronous, and SortableJS has already moved the DOM node optimistically by the
   time it resolves. A re-render can occur in between (from `metadataCache.on('changed')`
@@ -553,9 +568,9 @@ base" for free.
   silent-clear behavior).
 - **Card order within a column isn't persisted.** Dragging a card within its own column
   is visually allowed (SortableJS's default) but is a no-op — no frontmatter write, and
-  the very next unrelated re-render resorts cards back to `this.data.data`'s order.
-- **Automated tests.** `npm run test:unit` covers `columns.ts`/`task-stats.ts`/
-  `task-list.ts`/`update-column.ts`'s pure logic directly; `npm run test:e2e` drives a real,
+  the very next unrelated re-render resorts cards back to Bases' order within the group.
+- **Automated tests.** `npm run test:unit` covers the pure logic directly (`columns.ts`,
+  `update-column.ts`'s `valueToFrontmatter`, `task-stats.ts`, `task-list.ts` and more); `npm run test:e2e` drives a real,
   latest-version Obsidian instance via WDIO Obsidian Service against the fixture vault
   in `test/e2e/vaults/kanban/` (copied to a temp dir per run), including drag-and-drop
   coverage in `test/e2e/specs/drag-and-drop.e2e.ts`, column-reorder coverage in
@@ -581,18 +596,13 @@ base" for free.
   re-renders but not closing and reopening the base. The e2e suite empties the leaf before
   each spec-6 test for that reason: `obsidianPage.resetVault()` alone keeps the same view
   instance, and its state, alive.
-- **Column reorder rewrites the option text.** Dragging a column replaces the
-  **Column order** text with the normalised `a, b, c` form. This drops any extra spacing
-  or blank entries the user had typed. Labels that don't match a column are kept, in their
-  relative position. The `.base` file is written by Bases on its own debounce, so the file
-  on disk lags the board by a couple of seconds.
+- **Column reorder rewrites the group order.** Dragging a column saves every on-screen
+  column in its new order, with list values in list form (`[todo]`). Listed values that
+  have no notes keep their relative position. The `.base` file is written by Bases on its
+  own debounce, so the file on disk lags the board by a couple of seconds.
 - **Column drags need the handle.** Only the grip icon in a column's header starts a
-  column drag. The e2e test for "No column" checks the outcome (it ends last). The
-  simulated pointer path never actually tries a drop after it, so the `onMove` guard isn't
-  tested on its own.
-- **Column-order matching is exact, case-sensitive string comparison** between the
-  configured `columnOrder` text and each column's stringified property value; unmatched
-  configured labels are silently dropped (no empty phantom columns are created).
+  column drag. The e2e suite's simulated pointer can't drop a column after the last
+  column, so "No column" following the group order is tested by seeding the order instead.
 - **Task-stats refresh is vault-wide, not scoped to the board's visible files.** The
   `metadataCache.on('changed', ...)` listener re-renders the whole board on *any* file's
   cache update, not just files currently shown. Simple and correct, if slightly more

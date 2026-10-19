@@ -17,8 +17,8 @@ drag-and-drop behavior, etc.) beyond what the automated suites assert.
 ## Prerequisites
 
 - Node.js 20+ (`node --version`; `.nvmrc` pins 24 — run `nvm use`).
-- Obsidian **1.10.0 or later** (Bases' plugin-facing view API requires it — matches
-  `manifest.json`'s `minAppVersion`).
+- Obsidian **1.14.3 or later** (Bases' manual group order, used for column order, requires
+  it — matches `manifest.json`'s `minAppVersion`).
 - A vault with the core **Bases** plugin enabled: **Settings → Core plugins → Bases**.
 
 ## Build
@@ -58,7 +58,7 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    e.g. `status: [Todo]`). Include:
    - Several notes with a single value each (e.g. `Todo`, `Doing`, `Done`).
    - One note with **multiple values** in that property (e.g. `[Todo, Urgent]`) — to
-     confirm only the first value (`Todo`) determines its column.
+     confirm it gets its own `Todo, Urgent` column, as in Bases' own grouping.
    - One note that **omits the property entirely** — to confirm it lands in "No
      column".
    - Among these, include a note with a mix of checked/unchecked tasks (e.g.
@@ -67,15 +67,15 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    base-level filter that excludes at least one note — to confirm the Kanban view never
    shows filtered-out notes.
 3. **Add a new view** to the base and select type **"Kanban board"**.
-4. **Configure the view**: in its options, select the list property under **Column
-   property**. Optionally set **Column order** to a comma-separated list, e.g.
-   `Todo, Doing, Done`.
+4. **Configure the view**: in the base toolbar, open **Group by** and pick the list
+   property. Before that, the board shows "Set "Group by" in the base toolbar to build
+   columns." The view options have no column property or column order (spec 12).
 5. **Verify**:
-   - Columns render in the order configured, or in order-of-appearance if
-     `columnOrder` is left blank.
+   - Columns follow the **Group by** order: ascending or descending by value, or the
+     manual order you set in that menu.
    - Each card shows only the note's title.
    - The property-less note appears under a **"No column"** column.
-   - The multi-value note appears once, under its **first** value only.
+   - The multi-value note appears once, under its own combined column.
    - Notes excluded by the base's filter never appear anywhere on the board.
    - Clicking a card opens the corresponding note.
 6. **Rename check**: confirm the view's name is editable via Bases' own view-management
@@ -91,7 +91,9 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    checkbox, and confirm the board updates without a manual reload.
 8. **Drag and drop**: drag a card into a different column and confirm both (a) it
    visually moves, and (b) the note's frontmatter property updates to the target
-   column's value (open the note, or inspect the file on disk). Drag a card back into
+   column's value (open the note, or inspect the file on disk). Group by a **text**
+   property and confirm a drop writes a plain string, not a list. Group by **folder** and
+   confirm cards can't be dragged. Drag a card back into
    its own column and confirm nothing changes. Try dragging a card into **"No column"**
    and confirm the drop is rejected (the card stays where it was, frontmatter
    unchanged) — "No column" is a fallback bucket for notes missing the property, not a
@@ -99,16 +101,13 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
 9. **Column reorder**. Each column header except **"No column"** shows a grip icon in its
    right corner.
    - Drag a column by that icon to a new position. Confirm the board keeps the new order,
-     the **Column order** view option now lists it (e.g. `done, todo, in-progress,
-     cancelled`), and after a couple of seconds the `.base` file's `columnOrder` matches.
+     **Group by** switches to manual order with the same list, and after a couple of
+     seconds the `.base` file's `groupOrder` matches (list values as `[todo]`).
+   - Reorder groups in the **Group by** menu and confirm the board follows.
    - Pressing a column's title text, or a card, must not move the column.
-   - Try dropping a column after **"No column"** and confirm it lands just before it
-     instead. "No column" always stays last and never appears in **Column order**.
-   - On a view whose **Column order** is blank, reorder once and confirm the option gets
-     filled in.
-   - Add a label with no matching notes to **Column order** (e.g. `review` between `todo`
-     and `done`), reorder the visible columns, and confirm `review` is still in the option
-     next to `todo`.
+   - Move "No column" in the **Group by** menu and confirm the board puts it there.
+   - In manual order, add a note with a new value. Confirm it stays hidden until the value
+     is added in the **Group by** menu, as in Bases' own views.
 10. **Recent and stale cards** (spec 10). Open **Settings → Clár**.
    - Confirm both **Identify recent cards** and **Identify stale cards** are on, with a
      timeframe of 1 week. Turning a toggle off hides its timeframe row.
@@ -149,8 +148,8 @@ manual reload (or a hot-reload plugin) to pick up the new build.
 ## Troubleshooting
 
 - **"Kanban board" doesn't appear in the view-type list**: the core Bases plugin is
-  disabled, or the vault's Obsidian version is below `1.10.0`.
-- **Column property dropdown shows non-list properties**: expected fallback behavior if
-  Obsidian's internal `metadataTypeManager` shape is unavailable — not a bug, see
-  `architecture.md`'s known limitations.
+  disabled, or the vault's Obsidian version is below `1.14.3`.
+- **The board asks for "Group by" although it is set**, or a column drag shows "could not
+  save the column order": Obsidian changed the internal "Group by" shape that
+  `bases-group.ts` reads. See `architecture.md`'s known limitations.
 - **`main.js` missing**: run `npm run build` or `npm run dev` first.

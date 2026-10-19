@@ -4,5 +4,7 @@ filters:
 views:
   - type: clar-kanban
     name: Task list hidden
-    groupProperty: note.status
+    groupBy:
+      property: note.status
+      direction: ASC
     showTaskList: false

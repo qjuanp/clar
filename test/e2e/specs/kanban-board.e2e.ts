@@ -1,14 +1,21 @@
-import { expect } from '@wdio/globals';
+import { browser, expect } from '@wdio/globals';
 import { describe, it, beforeEach } from 'mocha';
 import { obsidianPage } from 'wdio-obsidian-service';
-import { openBase, readBoard } from '../support/kanban-board';
+import {
+	closeAllViews,
+	openBase,
+	openBaseWithoutCards,
+	readBoard,
+	readBoardEmptyMessage,
+	readColumnLabels,
+} from '../support/kanban-board';
 
 describe('Kanban board columns (spec 1)', function () {
 	beforeEach(async function () {
 		await obsidianPage.resetVault();
 	});
 
-	it('renders one column per configured status, in the configured order, with a trailing "No column" bucket', async function () {
+	it('renders one column per status group, in the Bases group order, with "No column" where that order puts it', async function () {
 		await openBase('Board.base');
 		const board = await readBoard();
 
@@ -33,18 +40,41 @@ describe('Kanban board columns (spec 1)', function () {
 		expect(allTitles).not.toContain('Deprecated Portal');
 	});
 
-	it('groups the same set of notes into columns even without a configured column order', async function () {
-		// Board Unordered.base groups by the same `status` property but has no
-		// `columnOrder` set. Bases' own default ordering of query results isn't
-		// part of this plugin's contract, so this only asserts the resulting set
-		// of columns/cards is correct, not a specific column sequence.
+	it('follows the "Group by" direction when there is no manual group order', async function () {
+		// Board Unordered.base groups by `status` ascending, with no `groupOrder`:
+		// Bases sorts the groups by value and puts the group with no value last.
 		await openBase('Board Unordered.base');
 		const board = await readBoard();
 
-		expect(board.map((column) => column.label).sort()).toEqual(
-			['No column', 'cancelled', 'done', 'in-progress', 'todo'].sort(),
-		);
+		expect(board.map((column) => column.label)).toEqual(['cancelled', 'done', 'in-progress', 'todo', 'No column']);
 		const byLabel = new Map(board.map((column) => [column.label, column]));
 		expect(byLabel.get('todo')?.cards.map((c) => c.title).sort()).toEqual(['Mobile App', 'Website Redesign']);
+	});
+
+	it('asks for a "Group by" when the view has none (spec 12)', async function () {
+		await closeAllViews();
+		await openBaseWithoutCards('Board No Group.base');
+
+		await browser.waitUntil(async () => (await readBoardEmptyMessage()) !== null, {
+			timeout: 5000,
+			timeoutMsg: 'The board never showed its empty-state prompt',
+		});
+		expect(await readBoardEmptyMessage()).toBe('Set "Group by" in the base toolbar to build columns.');
+		expect(await readColumnLabels()).toEqual([]);
+	});
+
+	it('hides values that are not listed in a manual group order, like Bases does (spec 12)', async function () {
+		await closeAllViews();
+		// Drop `cancelled` from Board.base's manual group order before opening it.
+		await browser.executeObsidian(async ({ app }) => {
+			const file = app.vault.getFileByPath('Board.base');
+			if (!file) {
+				throw new Error('Expected Board.base');
+			}
+			await app.vault.process(file, (content) => content.replace('      - [cancelled]\n', ''));
+		});
+		await openBase('Board.base');
+
+		expect(await readColumnLabels()).toEqual(['todo', 'in-progress', 'done', 'No column']);
 	});
 });

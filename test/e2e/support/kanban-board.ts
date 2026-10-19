@@ -257,22 +257,12 @@ export async function columnHasHandle(columnLabel: string): Promise<boolean> {
 }
 
 /**
- * The `columnOrder` value stored in a `.base` file, parsed into labels, or
- * null when the file has no `columnOrder` entry. Reads the raw file, so it
- * reflects what was actually persisted rather than in-memory view state.
+ * The manual group order (`groupOrder`, spec 12) stored for a view in a
+ * `.base` file, or null when that view has none ("Group by" sorts by value).
+ * Reads the raw file, so it reflects what was actually persisted.
  */
-export async function readBaseColumnOrder(path: string): Promise<string[] | null> {
-	const content = await readNote(path);
-	const match = /^\s*columnOrder:\s*(.*)$/m.exec(content);
-	if (!match) {
-		return null;
-	}
-	return (match[1] ?? '')
-		.trim()
-		.replace(/^(['"])(.*)\1$/, '$2')
-		.split(',')
-		.map((label) => label.trim())
-		.filter((label) => label.length > 0);
+export async function readBaseGroupOrder(path: string, viewIndex = 0): Promise<unknown> {
+	return readBaseViewKey(path, 'groupOrder', viewIndex);
 }
 
 /**
@@ -657,19 +647,45 @@ export async function toggleColumnStaleIcon(columnLabel: string): Promise<void> 
 	});
 }
 
-/**
- * The `staleColumns` list stored for a view in a `.base` file, or null when
- * that view has no such entry. Parses the raw file with Obsidian's YAML parser,
- * so it reflects what was actually persisted rather than in-memory view state.
- */
+/** The `staleColumns` list stored for a view in a `.base` file (spec 11), or null when unset. */
 export async function readBaseStaleColumns(path: string, viewIndex = 0): Promise<unknown> {
+	return readBaseViewKey(path, 'staleColumns', viewIndex);
+}
+
+/**
+ * One key of a view in a `.base` file, or null when that view has no such
+ * entry. Parses the raw file with Obsidian's YAML parser, so it reflects what
+ * was actually persisted rather than in-memory view state.
+ */
+export async function readBaseViewKey(path: string, key: string, viewIndex = 0): Promise<unknown> {
 	const content = await readNote(path);
 	return browser.executeObsidian(
-		({ obsidian }, raw, index) => {
-			const parsed = obsidian.parseYaml(raw) as { views?: { staleColumns?: unknown }[] } | null;
-			return parsed?.views?.[index]?.staleColumns ?? null;
+		({ obsidian }, raw, viewKey, index) => {
+			const parsed = obsidian.parseYaml(raw) as { views?: Record<string, unknown>[] } | null;
+			return parsed?.views?.[index]?.[viewKey] ?? null;
 		},
 		content,
+		key,
 		viewIndex,
 	);
+}
+
+/**
+ * Opens a `.base` file without waiting for cards, for boards expected to show
+ * an empty state instead, and waits for the board container.
+ */
+export async function openBaseWithoutCards(path: string): Promise<void> {
+	await browser.executeObsidian(async ({ app, obsidian }, basePath) => {
+		const file = app.vault.getAbstractFileByPath(basePath);
+		if (!(file instanceof obsidian.TFile)) {
+			throw new Error(`Expected a file at "${basePath}"`);
+		}
+		await app.workspace.getLeaf(false).openFile(file);
+	}, path);
+	await browser.$('.clar-kanban-board').waitForExist({ timeout: 5000 });
+}
+
+/** The board's empty-state message, or null when it renders columns. */
+export async function readBoardEmptyMessage(): Promise<string | null> {
+	return browser.execute(() => document.querySelector('.clar-kanban-empty')?.textContent ?? null);
 }

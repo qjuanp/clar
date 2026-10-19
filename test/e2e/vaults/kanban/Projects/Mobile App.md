@@ -1,4 +1,5 @@
 ---
+owner: Bob
 status:
   - todo
 tags:

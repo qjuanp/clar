@@ -1,94 +1,91 @@
-import { ListValue, NullValue, type BasesEntry, type BasesPropertyId } from 'obsidian';
+import type { BasesEntry, BasesEntryGroup, FrontmatterValue } from 'obsidian';
 import { NO_COLUMN_ID, NO_COLUMN_LABEL } from './constants';
+import { valueToFrontmatter } from './update-column';
 
 export interface KanbanColumn {
+	/** Unique per board; the label, or `NO_COLUMN_ID`, with a ` (2)`… suffix for a repeated label. */
 	id: string;
 	label: string;
+	/** The group key as a frontmatter value: what a dropped card gets, and what the group order stores. */
+	value: FrontmatterValue;
 	entries: BasesEntry[];
 }
 
 /**
- * Resolves the column key for a single entry.
- * A list property is expected to hold a single value in practice; if it holds
- * more than one, only the first value is used to place the card (documented
- * assumption, not general multi-column duplication).
+ * One column per Bases group (spec 12), in the order Bases returns them: the
+ * "Group by" direction, or its manual group order. Bases groups by the whole
+ * property value, so `[in-progress, launch]` is its own column. The group with
+ * no key becomes "No column", wherever Bases puts it. Empty groups are skipped.
  */
-function resolveColumnLabel(entry: BasesEntry, groupProperty: BasesPropertyId): string | null {
-	const value = entry.getValue(groupProperty);
-	if (value === null || value instanceof NullValue) {
-		return null;
-	}
+export function buildKanbanColumns(groups: BasesEntryGroup[]): KanbanColumn[] {
+	const columns: KanbanColumn[] = [];
+	const usedIds = new Set<string>();
 
-	if (value instanceof ListValue) {
-		if (value.length() === 0) {
-			return null;
+	for (const group of groups) {
+		if (group.entries.length === 0) {
+			continue;
 		}
-		const label = value.get(0).toString().trim();
-		return label === '' ? null : label;
-	}
-
-	const label = value.toString().trim();
-	return label === '' ? null : label;
-}
-
-export function buildKanbanColumns(
-	entries: BasesEntry[],
-	groupProperty: BasesPropertyId,
-	columnOrder: string[],
-): KanbanColumn[] {
-	const byLabel = new Map<string, KanbanColumn>();
-	const noColumn: KanbanColumn = { id: NO_COLUMN_ID, label: NO_COLUMN_LABEL, entries: [] };
-
-	for (const entry of entries) {
-		const label = resolveColumnLabel(entry, groupProperty);
-		if (label === null) {
-			noColumn.entries.push(entry);
+		if (!group.hasKey() || !group.key) {
+			columns.push({ id: NO_COLUMN_ID, label: NO_COLUMN_LABEL, value: null, entries: group.entries });
+			usedIds.add(NO_COLUMN_ID);
 			continue;
 		}
 
-		let column = byLabel.get(label);
-		if (!column) {
-			column = { id: label, label, entries: [] };
-			byLabel.set(label, column);
+		const label = group.key.toString();
+		let id = label;
+		for (let n = 2; usedIds.has(id); n++) {
+			id = `${label} (${n})`;
 		}
-		column.entries.push(entry);
+		usedIds.add(id);
+		columns.push({ id, label, value: valueToFrontmatter(group.key), entries: group.entries });
 	}
 
-	const ordered: KanbanColumn[] = [];
-	for (const label of columnOrder) {
-		const column = byLabel.get(label);
-		if (column) {
-			ordered.push(column);
-			byLabel.delete(label);
-		}
-	}
-	// Remaining columns not mentioned in columnOrder, in order of first appearance.
-	ordered.push(...byLabel.values());
-
-	if (noColumn.entries.length > 0) {
-		ordered.push(noColumn);
-	}
-
-	return ordered;
+	return columns;
 }
 
 /**
- * Builds the column order to persist after the user drags columns around.
- * `visibleOrder` is the new on-screen order (real columns only, never "No
- * column"). Labels from `previousOrder` that aren't on screen — configured
- * columns that currently have no cards — are kept, each re-inserted right
- * after the label that preceded it in the old order, so a temporarily empty
- * column doesn't silently drop out of the configuration.
+ * Comparison key for group order entries. Single-item lists are unwrapped,
+ * because Bases matches a stored `todo` and `[todo]` to the same list group.
  */
-export function mergeColumnOrder(previousOrder: string[], visibleOrder: string[]): string[] {
-	const merged = [...new Set(visibleOrder)];
-	let previousLabel: string | null = null;
-	for (const label of previousOrder) {
-		if (!merged.includes(label)) {
-			const insertAt = previousLabel === null ? 0 : merged.indexOf(previousLabel) + 1;
-			merged.splice(insertAt, 0, label);
+function orderKey(value: FrontmatterValue): string {
+	let current = value;
+	while (Array.isArray(current) && current.length === 1) {
+		current = current[0];
+	}
+	return JSON.stringify(current ?? null);
+}
+
+/**
+ * Builds the group order to save after the user drags columns around.
+ * `visibleOrder` is the new on-screen order of column values (`null` for "No
+ * column"). Entries from `previousOrder` that aren't on screen — listed groups
+ * that currently have no cards, which Bases leaves out of its groups — are kept,
+ * each re-inserted right after the entry that preceded it in the old order, so
+ * a temporarily empty group doesn't silently drop out of the order.
+ */
+export function mergeColumnOrder(
+	previousOrder: FrontmatterValue[],
+	visibleOrder: FrontmatterValue[],
+): FrontmatterValue[] {
+	const merged: FrontmatterValue[] = [];
+	const keys: string[] = [];
+	for (const value of visibleOrder) {
+		const key = orderKey(value);
+		if (!keys.includes(key)) {
+			merged.push(value);
+			keys.push(key);
 		}
-		previousLabel = label;
+	}
+
+	let previousKey: string | null = null;
+	for (const value of previousOrder) {
+		const key = orderKey(value);
+		if (!keys.includes(key)) {
+			const insertAt = previousKey === null ? 0 : keys.indexOf(previousKey) + 1;
+			merged.splice(insertAt, 0, value);
+			keys.splice(insertAt, 0, key);
+		}
+		previousKey = key;
 	}
 	return merged;
 }

@@ -45,7 +45,9 @@ const COLUMN_MENU_CLASS = 'clar-kanban-column__menu';
  * reported via `onCardMoved`; the next `onDataUpdated()` re-render (driven by
  * the resulting frontmatter change) is what reconciles the DOM afterwards.
  * Column reorders (dragged by the handle in each column header) are reported
- * via `onColumnsReordered` with the new order of real column labels.
+ * via `onColumnsReordered` with the new on-screen order of every column id,
+ * "No column" included. Pass `onCardMoved: null` to turn card dragging off
+ * (a "Group by" property the plugin can't write, like `file.folder`).
  * Pass `taskList: null` to hide the per-card task list; a card's task stats
  * (active count + progress bar) are shown either way. Pass `tags: null` to
  * hide the tag pills. Pass `columnMenu: null` to hide the column header menu.
@@ -57,8 +59,8 @@ export function renderKanbanBoard(
 	getTaskStats: (file: TFile) => TaskStats | null,
 	getCardAge: (file: TFile, column: KanbanColumn) => CardAgeIndicators,
 	tags: TagRenderOptions | null,
-	onCardMoved: (path: string, targetColumnLabel: string) => void,
-	onColumnsReordered: (labels: string[]) => void,
+	onCardMoved: ((path: string, targetColumnId: string) => void) | null,
+	onColumnsReordered: (columnIds: string[]) => void,
 	taskList: TaskListRenderOptions | null,
 	columnMenu: ColumnMenuOptions | null,
 ): Sortable[] {
@@ -77,7 +79,7 @@ export function renderKanbanBoard(
 	for (const column of columns) {
 		const isNoColumn = column.id === NO_COLUMN_ID;
 		const columnEl = boardEl.createDiv({ cls: isNoColumn ? [COLUMN_CLASS, NO_COLUMN_CLASS] : COLUMN_CLASS });
-		columnEl.dataset.columnLabel = column.label;
+		columnEl.dataset.columnId = column.id;
 		const headerEl = columnEl.createDiv({ cls: 'clar-kanban-column__header' });
 		headerEl.createDiv({ cls: 'clar-kanban-column__title', text: column.label });
 		if (columnMenu) {
@@ -92,7 +94,7 @@ export function renderKanbanBoard(
 		}
 
 		const cardsEl = columnEl.createDiv({ cls: 'clar-kanban-column__cards' });
-		cardsEl.dataset.columnLabel = column.label;
+		cardsEl.dataset.columnId = column.id;
 		for (const entry of column.entries) {
 			const cardEl = cardsEl.createDiv({ cls: 'clar-kanban-card' });
 			cardEl.dataset.path = entry.file.path;
@@ -122,6 +124,7 @@ export function renderKanbanBoard(
 					isNoColumn
 						? { name: 'clar-kanban-cards', put: false }
 						: 'clar-kanban-cards',
+				disabled: onCardMoved === null,
 				animation: 150,
 				forceFallback: true,
 				fallbackTolerance: 3,
@@ -136,11 +139,11 @@ export function renderKanbanBoard(
 						return;
 					}
 					const path = evt.item.dataset.path;
-					const targetColumnLabel = evt.to.dataset.columnLabel;
-					if (!path || targetColumnLabel === undefined) {
+					const targetColumnId = evt.to.dataset.columnId;
+					if (!path || targetColumnId === undefined) {
 						return;
 					}
-					onCardMoved(path, targetColumnLabel);
+					onCardMoved?.(path, targetColumnId);
 				},
 			}),
 		);
@@ -177,13 +180,13 @@ function renderColumnMenuButton(headerEl: HTMLElement, column: KanbanColumn, opt
 
 /**
  * Columns are reordered only by their header handle, in a group of their own
- * so cards and columns can never be dropped into each other. "No column" is
- * pinned last: it has no handle (so it can never start a drag — deliberately
- * not a `filter`, which would `preventDefault` every press inside it,
- * including on its cards), and `onMove` refuses any drop that would land
- * after it.
+ * so cards and columns can never be dropped into each other. "No column" has
+ * no handle, so it can never start a drag (deliberately not a `filter`, which
+ * would `preventDefault` every press inside it, including on its cards). Its
+ * place follows the Bases group order (spec 12), so other columns may land on
+ * either side of it, and the reported order includes it.
  */
-function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (labels: string[]) => void): Sortable {
+function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (columnIds: string[]) => void): Sortable {
 	return new Sortable(boardEl, {
 		group: 'clar-kanban-columns',
 		draggable: `.${COLUMN_CLASS}`,
@@ -193,17 +196,15 @@ function createColumnSortable(boardEl: HTMLElement, onColumnsReordered: (labels:
 		forceFallback: true,
 		fallbackTolerance: 3,
 		fallbackOnBody: true,
-		onMove: (evt) => !(evt.related.hasClass(NO_COLUMN_CLASS) && evt.willInsertAfter),
 		onEnd: (evt) => {
 			if (evt.oldIndex === evt.newIndex) {
 				return;
 			}
-			const labels = Array.from(boardEl.children)
+			const columnIds = Array.from(boardEl.children)
 				.filter((el): el is HTMLElement => el instanceof HTMLElement && el.hasClass(COLUMN_CLASS))
-				.filter((el) => !el.hasClass(NO_COLUMN_CLASS))
-				.map((el) => el.dataset.columnLabel)
-				.filter((label): label is string => label !== undefined);
-			onColumnsReordered(labels);
+				.map((el) => el.dataset.columnId)
+				.filter((id): id is string => id !== undefined);
+			onColumnsReordered(columnIds);
 		},
 	});
 }

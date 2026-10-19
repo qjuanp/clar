@@ -1,8 +1,6 @@
 export const KANBAN_VIEW_TYPE = 'clar-kanban';
 
 export const KANBAN_OPTION_KEYS = {
-	GROUP_PROPERTY: 'groupProperty',
-	COLUMN_ORDER: 'columnOrder',
 	SHOW_TASK_LIST: 'showTaskList',
 	SHOW_TAGS: 'showTags',
 	/**

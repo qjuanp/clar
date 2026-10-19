@@ -4,4 +4,6 @@ filters:
 views:
   - type: clar-kanban
     name: Unordered board
-    groupProperty: note.status
+    groupBy:
+      property: note.status
+      direction: ASC

@@ -5,11 +5,14 @@ import {
 	Notice,
 	TFile,
 	parseFrontMatterTags,
+	parsePropertyId,
+	type BasesPropertyId,
 	type QueryController,
 } from 'obsidian';
 import type Sortable from 'sortablejs';
 import { KANBAN_OPTION_KEYS, KANBAN_VIEW_TYPE } from './constants';
-import { buildKanbanColumns, mergeColumnOrder } from './columns';
+import { getGroupOrder, getGroupProperty, setGroupOrder } from './bases-group';
+import { buildKanbanColumns, mergeColumnOrder, type KanbanColumn } from './columns';
 import { getCardAgeIndicators } from './card-age';
 import { normalizeTags } from './card-tags';
 import { getTaskStats } from './task-stats';
@@ -25,16 +28,6 @@ import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-lis
 import { updateEntryColumn } from './update-column';
 import type { SettingsProvider } from '../settings/settings-model';
 
-function parseColumnOrder(rawValue: unknown): string[] {
-	if (typeof rawValue !== 'string') {
-		return [];
-	}
-	return rawValue
-		.split(',')
-		.map((value) => value.trim())
-		.filter((value) => value.length > 0);
-}
-
 export class KanbanBasesView extends BasesView {
 	type = KANBAN_VIEW_TYPE;
 
@@ -47,6 +40,8 @@ export class KanbanBasesView extends BasesView {
 	private renderComponent: Component | null = null;
 	/** Set on the first `onDataUpdated()`; before that, `data`/`config` may not be ready. */
 	private hasRendered = false;
+	/** The columns of the current board by id, to resolve drops and column reorders. */
+	private columnsById = new Map<string, KanbanColumn>();
 
 	constructor(
 		controller: QueryController,
@@ -82,18 +77,21 @@ export class KanbanBasesView extends BasesView {
 		this.destroySortables();
 		this.resetRenderComponent();
 
-		const groupProperty = this.config.getAsPropertyId(KANBAN_OPTION_KEYS.GROUP_PROPERTY);
+		// Columns come from Bases' own "Group by" (spec 12): its property, its
+		// order (direction or manual group order) and its grouping of values.
+		const groupProperty = getGroupProperty(this.config);
 		if (!groupProperty) {
+			this.columnsById.clear();
 			this.boardEl.empty();
 			this.boardEl.createDiv({
 				cls: 'clar-kanban-empty',
-				text: 'Select a list property in the view options to build columns.',
+				text: 'Set "Group by" in the base toolbar to build columns.',
 			});
 			return;
 		}
 
-		const columnOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
-		const columns = buildKanbanColumns(this.data.data, groupProperty, columnOrder);
+		const columns = buildKanbanColumns(this.data.groupedData);
+		this.columnsById = new Map(columns.map((column) => [column.id, column]));
 		const now = Date.now();
 		const staleColumns = new Set(parseStaleColumns(this.config.get(KANBAN_OPTION_KEYS.STALE_COLUMNS)));
 		const settings = this.settingsProvider.settings;
@@ -112,8 +110,10 @@ export class KanbanBasesView extends BasesView {
 				),
 			// Tags are opt-in: only an explicit `true` shows them (default off).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TAGS) === true ? this.tagOptions() : null,
-			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
-			(labels) => this.onColumnsReordered(labels),
+			// Only note properties can be written back; a group by `file.folder` or a
+			// formula keeps the cards where they are.
+			isWritableProperty(groupProperty) ? (path, columnId) => this.onCardMoved(path, columnId) : null,
+			(columnIds) => this.onColumnsReordered(columnIds),
 			// Only an explicit `false` hides the list: an unset option means the default (on).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TASK_LIST) === false ? null : this.taskListOptions(),
 			// The menu's only item is the stale switch, so it goes away with the global
@@ -132,26 +132,35 @@ export class KanbanBasesView extends BasesView {
 		void this.app.workspace.getLeaf(false).openFile(file);
 	}
 
-	private onCardMoved(path: string, targetColumnLabel: string): void {
+	private onCardMoved(path: string, targetColumnId: string): void {
 		const file = this.app.vault.getAbstractFileByPath(path);
-		const groupProperty = this.config.getAsPropertyId(KANBAN_OPTION_KEYS.GROUP_PROPERTY);
-		if (!(file instanceof TFile) || !groupProperty) {
+		const groupProperty = getGroupProperty(this.config);
+		const target = this.columnsById.get(targetColumnId);
+		if (!(file instanceof TFile) || !groupProperty || !target || target.value === null) {
 			return;
 		}
-		updateEntryColumn(this.app, file, groupProperty, targetColumnLabel).catch((err: unknown) => {
+		updateEntryColumn(this.app, file, groupProperty, target.value).catch((err: unknown) => {
 			console.error('[Clár] Failed to update column for', path, err);
 			new Notice('Clár: could not move card — see console for details');
 		});
 	}
 
 	/**
-	 * Persists a dragged column order into the "Column order" option, in the
-	 * same comma-separated text form users type by hand. The DOM already shows
-	 * the new order, so any re-render this triggers rebuilds the same layout.
+	 * Saves a dragged column order as the Bases manual group order (spec 12), the
+	 * same list the "Group by" menu edits, so both stay in sync. This switches
+	 * "Group by" to manual order. The DOM already shows the new order, so the
+	 * re-render this triggers rebuilds the same layout.
 	 */
-	private onColumnsReordered(labels: string[]): void {
-		const previousOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
-		this.config.set(KANBAN_OPTION_KEYS.COLUMN_ORDER, mergeColumnOrder(previousOrder, labels).join(', '));
+	private onColumnsReordered(columnIds: string[]): void {
+		const visibleOrder = columnIds
+			.map((id) => this.columnsById.get(id))
+			.filter((column): column is KanbanColumn => column !== undefined)
+			.map((column) => column.value);
+		const order = mergeColumnOrder(getGroupOrder(this.config) ?? [], visibleOrder);
+		if (!setGroupOrder(this.config, order)) {
+			new Notice('Clár: could not save the column order, reorder the groups from the base toolbar instead');
+			this.onDataUpdated();
+		}
 	}
 
 	/**
@@ -282,4 +291,9 @@ export class KanbanBasesView extends BasesView {
 		}
 		this.sortables = [];
 	}
+}
+
+/** A dropped card can only be written back into a note (frontmatter) property. */
+function isWritableProperty(propertyId: BasesPropertyId): boolean {
+	return parsePropertyId(propertyId).type === 'note';
 }

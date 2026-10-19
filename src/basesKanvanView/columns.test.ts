@@ -1,107 +1,156 @@
 import { describe, expect, it } from 'vitest';
-import { ListValue, NullValue } from 'obsidian';
-import type { BasesEntry, BasesPropertyId, Value } from 'obsidian';
+import { ListValue, NullValue, StringValue } from 'obsidian';
+import type { BasesEntry, BasesEntryGroup, Value } from 'obsidian';
 import { buildKanbanColumns, mergeColumnOrder } from './columns';
 import { NO_COLUMN_ID, NO_COLUMN_LABEL } from './constants';
 
-const GROUP_PROPERTY = 'note.status' as BasesPropertyId;
+// buildKanbanColumns() only passes entries through, so any object will do.
+function entry(name: string): BasesEntry {
+	return { name } as unknown as BasesEntry;
+}
 
-// buildKanbanColumns() never touches `entry.file`, only `entry.getValue()`,
-// so the fake entries below only need to satisfy that part of the shape.
-function entry(value: Value | null): BasesEntry {
-	return { getValue: () => value } as unknown as BasesEntry;
+/** A fake Bases group: `key: null` is the group of entries with no value. */
+function group(key: Value | null, entries: BasesEntry[]): BasesEntryGroup {
+	return {
+		key: key ?? NullValue.value,
+		entries,
+		hasKey: () => key !== null,
+	};
 }
 
 describe('buildKanbanColumns', () => {
-	it('groups entries by the first value of a list property', () => {
-		const todo = entry(new ListValue(['todo']));
-		const done = entry(new ListValue(['done']));
+	it('keeps groups in Bases\' order, with "No column" where Bases puts it', () => {
+		const done = entry('done');
+		const none = entry('none');
+		const todo = entry('todo');
 
-		const columns = buildKanbanColumns([todo, done], GROUP_PROPERTY, []);
+		const columns = buildKanbanColumns([
+			group(new ListValue(['done']), [done]),
+			group(null, [none]),
+			group(new ListValue(['todo']), [todo]),
+		]);
 
-		expect(columns.map((column) => column.label)).toEqual(['todo', 'done']);
-		expect(columns[0]?.entries).toEqual([todo]);
-		expect(columns[1]?.entries).toEqual([done]);
+		expect(columns.map((column) => column.id)).toEqual(['done', NO_COLUMN_ID, 'todo']);
+		expect(columns.map((column) => column.label)).toEqual(['done', NO_COLUMN_LABEL, 'todo']);
+		expect(columns.map((column) => column.entries)).toEqual([[done], [none], [todo]]);
 	});
 
-	it('routes null, empty-list, and blank-string values to "No column"', () => {
-		const nullEntry = entry(NullValue.value);
-		const missingEntry = entry(null);
-		const emptyListEntry = entry(new ListValue([]));
+	it('turns the group without a key into "No column", with no value to write', () => {
+		const none = entry('none');
 
-		const columns = buildKanbanColumns([nullEntry, missingEntry, emptyListEntry], GROUP_PROPERTY, []);
+		const columns = buildKanbanColumns([group(null, [none])]);
 
-		expect(columns).toHaveLength(1);
-		expect(columns[0]).toMatchObject({ id: NO_COLUMN_ID, label: NO_COLUMN_LABEL });
-		expect(columns[0]?.entries).toEqual([nullEntry, missingEntry, emptyListEntry]);
+		expect(columns).toEqual([{ id: NO_COLUMN_ID, label: NO_COLUMN_LABEL, value: null, entries: [none] }]);
 	});
 
-	it('orders configured column names first, dropping unmatched names, then appends discovered columns and "No column" last', () => {
-		const todo = entry(new ListValue(['todo']));
-		const done = entry(new ListValue(['done']));
-		const inProgress = entry(new ListValue(['in-progress']));
-		const noColumn = entry(NullValue.value);
-
-		const columns = buildKanbanColumns(
-			[todo, done, inProgress, noColumn],
-			GROUP_PROPERTY,
-			['done', 'does-not-exist', 'todo'],
-		);
-
-		expect(columns.map((column) => column.label)).toEqual(['done', 'todo', 'in-progress', NO_COLUMN_LABEL]);
-	});
-
-	it('omits "No column" entirely when every entry has a value', () => {
-		const columns = buildKanbanColumns([entry(new ListValue(['todo']))], GROUP_PROPERTY, []);
+	it('omits "No column" entirely when every group has a key', () => {
+		const columns = buildKanbanColumns([group(new ListValue(['todo']), [entry('a')])]);
 
 		expect(columns.some((column) => column.id === NO_COLUMN_ID)).toBe(false);
 	});
 
-	it('does not duplicate a card across columns when a list value has multiple items', () => {
-		const entryWithTwoValues = entry(new ListValue(['todo', 'done']));
+	it('skips groups with no entries', () => {
+		const columns = buildKanbanColumns([
+			group(new ListValue(['todo']), []),
+			group(new ListValue(['done']), [entry('a')]),
+			group(null, []),
+		]);
 
-		const columns = buildKanbanColumns([entryWithTwoValues], GROUP_PROPERTY, []);
+		expect(columns.map((column) => column.id)).toEqual(['done']);
+	});
+
+	it('keeps a multi-value list group as one column labelled with all its values', () => {
+		const columns = buildKanbanColumns([group(new ListValue(['in-progress', 'launch']), [entry('a')])]);
 
 		expect(columns).toHaveLength(1);
-		expect(columns[0]?.label).toBe('todo');
+		expect(columns[0]).toMatchObject({ label: 'in-progress, launch', value: ['in-progress', 'launch'] });
+	});
+
+	it('stores each column\'s value in its frontmatter form', () => {
+		const columns = buildKanbanColumns([
+			group(new ListValue(['todo']), [entry('a')]),
+			group(new StringValue('Alice'), [entry('b')]),
+		]);
+
+		expect(columns.map((column) => column.value)).toEqual([['todo'], 'Alice']);
+	});
+
+	it('gives repeated labels unique ids', () => {
+		const columns = buildKanbanColumns([
+			group(new ListValue(['todo']), [entry('a')]),
+			group(new StringValue('todo'), [entry('b')]),
+			group(new StringValue('todo'), [entry('c')]),
+		]);
+
+		expect(columns.map((column) => column.id)).toEqual(['todo', 'todo (2)', 'todo (3)']);
+		expect(columns.map((column) => column.label)).toEqual(['todo', 'todo', 'todo']);
 	});
 });
 
 describe('mergeColumnOrder', () => {
-	it('uses the visible order as-is when nothing was configured before', () => {
-		expect(mergeColumnOrder([], ['done', 'todo'])).toEqual(['done', 'todo']);
+	it('uses the visible order as-is when there was no manual order before', () => {
+		expect(mergeColumnOrder([], [['done'], ['todo']])).toEqual([['done'], ['todo']]);
 	});
 
-	it('replaces a configured order when every column is visible', () => {
-		expect(mergeColumnOrder(['todo', 'in-progress', 'done'], ['done', 'todo', 'in-progress'])).toEqual([
-			'done',
-			'todo',
-			'in-progress',
+	it('replaces a manual order when every group is visible', () => {
+		expect(mergeColumnOrder([['todo'], ['in-progress'], ['done']], [['done'], ['todo'], ['in-progress']])).toEqual([
+			['done'],
+			['todo'],
+			['in-progress'],
 		]);
 	});
 
-	it('keeps a configured column without cards right after its previous neighbour', () => {
-		expect(mergeColumnOrder(['todo', 'review', 'done'], ['done', 'todo'])).toEqual(['done', 'todo', 'review']);
-	});
-
-	it('keeps a configured column without cards first when it was first before', () => {
-		expect(mergeColumnOrder(['review', 'todo', 'done'], ['done', 'todo'])).toEqual(['review', 'done', 'todo']);
-	});
-
-	it('keeps consecutive configured columns without cards together and in order', () => {
-		expect(mergeColumnOrder(['todo', 'review', 'qa', 'done'], ['done', 'todo'])).toEqual([
-			'done',
-			'todo',
-			'review',
-			'qa',
+	it('keeps a listed group without cards right after its previous neighbour', () => {
+		expect(mergeColumnOrder([['todo'], ['review'], ['done']], [['done'], ['todo']])).toEqual([
+			['done'],
+			['todo'],
+			['review'],
 		]);
 	});
 
-	it('includes visible columns that were never configured', () => {
-		expect(mergeColumnOrder(['todo', 'done'], ['backlog', 'done', 'todo'])).toEqual(['backlog', 'done', 'todo']);
+	it('keeps a listed group without cards first when it was first before', () => {
+		expect(mergeColumnOrder([['review'], ['todo'], ['done']], [['done'], ['todo']])).toEqual([
+			['review'],
+			['done'],
+			['todo'],
+		]);
 	});
 
-	it('never duplicates a label', () => {
-		expect(mergeColumnOrder(['todo', 'todo', 'done'], ['done', 'todo', 'done'])).toEqual(['done', 'todo']);
+	it('keeps consecutive listed groups without cards together and in order', () => {
+		expect(mergeColumnOrder([['todo'], ['review'], ['qa'], ['done']], [['done'], ['todo']])).toEqual([
+			['done'],
+			['todo'],
+			['review'],
+			['qa'],
+		]);
+	});
+
+	it('includes visible groups that were never listed', () => {
+		expect(mergeColumnOrder([['todo'], ['done']], [['backlog'], ['done'], ['todo']])).toEqual([
+			['backlog'],
+			['done'],
+			['todo'],
+		]);
+	});
+
+	it('never duplicates an entry', () => {
+		expect(mergeColumnOrder([['todo'], ['todo'], ['done']], [['done'], ['todo'], ['done']])).toEqual([
+			['done'],
+			['todo'],
+		]);
+	});
+
+	it('keeps "No column" (null) where it is on screen, and a listed but hidden null in place', () => {
+		expect(mergeColumnOrder([], [['todo'], null, ['done']])).toEqual([['todo'], null, ['done']]);
+		expect(mergeColumnOrder([['todo'], null, ['done']], [['done'], ['todo']])).toEqual([['done'], ['todo'], null]);
+	});
+
+	it('treats a stored `todo` and `[todo]` as the same group, like Bases does', () => {
+		// `review` keeps its stored form and follows its old neighbour `done`; no duplicates.
+		expect(mergeColumnOrder(['todo', 'done', 'review'], [['done'], ['todo']])).toEqual([['done'], 'review', ['todo']]);
+	});
+
+	it('tells multi-value lists apart by content', () => {
+		expect(mergeColumnOrder([['a', 'b'], ['a']], [['a']])).toEqual([['a', 'b'], ['a']]);
 	});
 });

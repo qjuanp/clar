@@ -1,7 +1,13 @@
 import { browser, expect } from '@wdio/globals';
 import { describe, it, beforeEach } from 'mocha';
 import { obsidianPage } from 'wdio-obsidian-service';
-import { openBase, readBoardTolerant, dragCardToColumn, readFrontmatterProperty } from '../support/kanban-board';
+import {
+	closeAllViews,
+	openBase,
+	readBoardTolerant,
+	dragCardToColumn,
+	readFrontmatterProperty,
+} from '../support/kanban-board';
 
 describe('Drag and drop (spec 5)', function () {
 	beforeEach(async function () {
@@ -53,5 +59,37 @@ describe('Drag and drop (spec 5)', function () {
 		await browser.pause(500);
 		const status = await readFrontmatterProperty('Projects/Marketing Plan.md', 'status');
 		expect(status).toEqual(['in-progress']);
+	});
+
+	it('writes the target value in the property\'s own shape: a text property stays text (spec 12)', async function () {
+		await closeAllViews();
+		await openBase('Board By Owner.base');
+		// Mobile App.md starts as `owner: Bob`.
+		await dragCardToColumn('Mobile App', 'Alice');
+
+		await browser.waitUntil(
+			async () => (await readFrontmatterProperty('Projects/Mobile App.md', 'owner')) === 'Alice',
+			{ timeout: 5000, timeoutMsg: 'Mobile App.md owner was never updated to the plain string "Alice"' },
+		);
+	});
+
+	it('does not move cards when "Group by" is a property it cannot write, like the folder (spec 12)', async function () {
+		await closeAllViews();
+		await browser.executeObsidian(async ({ app }) => {
+			await app.vault.create(
+				'Board By Folder.base',
+				'views:\n  - type: clar-kanban\n    name: Board by folder\n    groupBy:\n      property: file.folder\n      direction: ASC\n',
+			);
+		});
+		await openBase('Board By Folder.base');
+		await dragCardToColumn('Mobile App', 'Tasks');
+
+		await browser.pause(500);
+		const stillThere = await browser.executeObsidian(({ app }) => app.vault.getFileByPath('Projects/Mobile App.md') !== null);
+		expect(stillThere).toBe(true);
+		const board = await readBoardTolerant();
+		const byLabel = new Map((board ?? []).map((c) => [c.label, c]));
+		expect(byLabel.get('Projects')?.cards.map((c) => c.title)).toContain('Mobile App');
+		expect(byLabel.get('Tasks')?.cards.map((c) => c.title) ?? []).not.toContain('Mobile App');
 	});
 });
