@@ -617,34 +617,100 @@ export async function columnHasMenu(columnLabel: string): Promise<boolean> {
 }
 
 /**
- * Opens a column's header menu and clicks "Show stale icon", which flips the
- * column's stale switch and saves it to the board's `.base` file.
  * Obsidian draws menus with the OS ("native menus") by default on macOS, which
- * never reach the DOM, so this switches the app to its DOM menus first.
+ * never reach the DOM, so this switches the app to its DOM menus, then opens a
+ * column's header menu.
  */
-export async function toggleColumnStaleIcon(columnLabel: string): Promise<void> {
+async function openColumnMenu(columnLabel: string): Promise<void> {
 	await browser.executeObsidian(({ app }) => {
 		(app.vault as unknown as { setConfig(key: string, value: unknown): void }).setConfig('nativeMenus', false);
 	});
 	await (await findColumnElement(columnLabel)).$('.clar-kanban-column__menu').click();
-	const clicked = await browser.waitUntil(
-		() =>
-			browser.execute(() => {
-				const item = Array.from(document.querySelectorAll<HTMLElement>('.menu .menu-item')).find(
-					(el) => el.querySelector('.menu-item-title')?.textContent === 'Show stale icon',
-				);
-				item?.click();
-				return item !== undefined;
-			}),
-		{ timeout: 5000, timeoutMsg: `"Show stale icon" menu item never appeared for column "${columnLabel}"` },
-	);
-	if (!clicked) {
-		throw new Error(`Could not click "Show stale icon" for column "${columnLabel}"`);
-	}
+	await browser.waitUntil(async () => (await browser.$$('.menu .menu-item').getElements()).length > 0, {
+		timeout: 5000,
+		timeoutMsg: `The menu of column "${columnLabel}" never opened`,
+	});
+}
+
+/**
+ * Closes an open column menu with a real click on the column's title text,
+ * which has no click action of its own. Obsidian's menu ignores synthetic
+ * key and mouse events dispatched from the page.
+ */
+async function closeMenu(columnLabel: string): Promise<void> {
+	await (await findColumnElement(columnLabel)).$('.clar-kanban-column__title').click();
+	await waitForMenuClosed();
+}
+
+async function waitForMenuClosed(): Promise<void> {
 	await browser.waitUntil(async () => (await browser.$$('.menu').getElements()).length === 0, {
 		timeout: 5000,
 		timeoutMsg: 'Column menu never closed',
 	});
+}
+
+/** Opens a column's header menu and clicks the item with the given title. */
+export async function clickColumnMenuItem(columnLabel: string, title: string): Promise<void> {
+	await openColumnMenu(columnLabel);
+	const clicked = await browser.execute((itemTitle) => {
+		const item = Array.from(document.querySelectorAll<HTMLElement>('.menu .menu-item')).find(
+			(el) => el.querySelector('.menu-item-title')?.textContent === itemTitle,
+		);
+		item?.click();
+		return item !== undefined;
+	}, title);
+	if (!clicked) {
+		await closeMenu(columnLabel);
+		throw new Error(`Column "${columnLabel}" has no "${title}" menu item`);
+	}
+	await waitForMenuClosed();
+}
+
+/** Flips a column's stale switch (spec 11), which saves it to the board's `.base` file. */
+export async function toggleColumnStaleIcon(columnLabel: string): Promise<void> {
+	await clickColumnMenuItem(columnLabel, 'Show stale icon');
+}
+
+export interface ColumnMenuItemSnapshot {
+	title: string;
+	checked: boolean;
+}
+
+/** The items of a column's header menu, in order, with their checked state. Closes the menu again. */
+export async function readColumnMenuItems(columnLabel: string): Promise<ColumnMenuItemSnapshot[]> {
+	await openColumnMenu(columnLabel);
+	const items = await browser.execute(() =>
+		Array.from(document.querySelectorAll<HTMLElement>('.menu .menu-item')).map((el) => ({
+			title: el.querySelector('.menu-item-title')?.textContent ?? '',
+			checked: el.classList.contains('mod-checked'),
+		})),
+	);
+	await closeMenu(columnLabel);
+	return items;
+}
+
+export interface ColumnColorSnapshot {
+	/** The column's `data-clar-color`, or null when it has no color. */
+	color: string | null;
+	/** Computed `box-shadow` of the column's first card, or null when it has no card. */
+	cardShadow: string | null;
+}
+
+/** A column's color and its first card's computed shadow, read in one in-page call. */
+export async function readColumnColor(columnLabel: string): Promise<ColumnColorSnapshot | null> {
+	return browser.execute((label) => {
+		const column = Array.from(document.querySelectorAll<HTMLElement>('.clar-kanban-column')).find(
+			(el) => el.querySelector('.clar-kanban-column__title')?.textContent === label,
+		);
+		if (!column) {
+			return null;
+		}
+		const card = column.querySelector('.clar-kanban-card');
+		return {
+			color: column.dataset.clarColor ?? null,
+			cardShadow: card ? getComputedStyle(card).boxShadow : null,
+		};
+	}, columnLabel);
 }
 
 /** The `staleColumns` list stored for a view in a `.base` file (spec 11), or null when unset. */

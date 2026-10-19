@@ -8,6 +8,7 @@ import {
 	openBase,
 	readBaseStaleColumns,
 	readCardIndicators,
+	readColumnMenuItems,
 	setClarSettings,
 	setFileTimes,
 	toggleColumnStaleIcon,
@@ -95,7 +96,7 @@ describe('Column menu: per-column stale icon (spec 11)', function () {
 		await waitForIndicators('Marketing Plan', NONE);
 	});
 
-	it('hides the menu while "Identify stale cards" is off and restores the saved choice after', async function () {
+	it('drops the stale item from the menu while "Identify stale cards" is off and restores the saved choice after', async function () {
 		await toggleColumnStaleIcon('in-progress');
 		await waitForIndicators('Marketing Plan', STALE);
 
@@ -103,17 +104,14 @@ describe('Column menu: per-column stale icon (spec 11)', function () {
 		staleOff.staleCards.enabled = false;
 		await setClarSettings(staleOff);
 		await waitForIndicators('Marketing Plan', NONE);
-		await browser.waitUntil(async () => !(await columnHasMenu('in-progress')), {
-			timeout: 5000,
-			timeoutMsg: 'Column menu was still shown with "Identify stale cards" off',
-		});
+		// The menu stays for the column colors; only its stale item goes.
+		expect(await columnHasMenu('in-progress')).toBe(true);
+		const titlesOff = (await readColumnMenuItems('in-progress')).map((item) => item.title);
+		expect(titlesOff).not.toContain('Show stale icon');
 
 		await setClarSettings(DEFAULT_CLAR_SETTINGS);
-		await browser.waitUntil(() => columnHasMenu('in-progress'), {
-			timeout: 5000,
-			timeoutMsg: 'Column menu never came back with "Identify stale cards" on',
-		});
 		await waitForIndicators('Marketing Plan', STALE);
+		expect(await readColumnMenuItems('in-progress')).toContainEqual({ title: 'Show stale icon', checked: true });
 	});
 
 	it('works for the "No column" column', async function () {

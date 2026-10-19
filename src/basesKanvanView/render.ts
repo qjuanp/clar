@@ -3,6 +3,7 @@ import { Menu, setIcon, setTooltip, type TFile } from 'obsidian';
 import type { KanbanColumn } from './columns';
 import type { TaskStats } from './task-stats';
 import { RECENT_TOOLTIP, type CardAgeIndicators } from './card-age';
+import { COLUMN_COLORS, type ColumnColor } from './column-colors';
 import { NO_COLUMN_ID } from './constants';
 
 /**
@@ -26,12 +27,16 @@ export interface TagRenderOptions {
 }
 
 /**
- * Callbacks for the column header menu (spec 11). Its only item so far toggles
- * the stale icon on the column's cards.
+ * Callbacks for the column header menu: the stale icon switch (spec 11) and
+ * the card color (column colors spec).
  */
 export interface ColumnMenuOptions {
+	/** False while "Identify stale cards" is off globally; the item is then left out. */
+	showStaleItem: boolean;
 	isStaleShown: (column: KanbanColumn) => boolean;
 	onToggleStale: (column: KanbanColumn, shown: boolean) => void;
+	getColor: (column: KanbanColumn) => ColumnColor | null;
+	onSetColor: (column: KanbanColumn, color: ColumnColor | null) => void;
 }
 
 const TASK_LIST_CLASS = 'clar-kanban-card__tasks';
@@ -50,7 +55,7 @@ const COLUMN_MENU_CLASS = 'clar-kanban-column__menu';
  * (a "Group by" property the plugin can't write, like `file.folder`).
  * Pass `taskList: null` to hide the per-card task list; a card's task stats
  * (active count + progress bar) are shown either way. Pass `tags: null` to
- * hide the tag pills. Pass `columnMenu: null` to hide the column header menu.
+ * hide the tag pills.
  */
 export function renderKanbanBoard(
 	boardEl: HTMLElement,
@@ -62,7 +67,7 @@ export function renderKanbanBoard(
 	onCardMoved: ((path: string, targetColumnId: string) => void) | null,
 	onColumnsReordered: (columnIds: string[]) => void,
 	taskList: TaskListRenderOptions | null,
-	columnMenu: ColumnMenuOptions | null,
+	columnMenu: ColumnMenuOptions,
 ): Sortable[] {
 	boardEl.empty();
 
@@ -80,11 +85,14 @@ export function renderKanbanBoard(
 		const isNoColumn = column.id === NO_COLUMN_ID;
 		const columnEl = boardEl.createDiv({ cls: isNoColumn ? [COLUMN_CLASS, NO_COLUMN_CLASS] : COLUMN_CLASS });
 		columnEl.dataset.columnId = column.id;
+		// Cards pick the color up through CSS (`styles.css`), so their markup doesn't change.
+		const color = columnMenu.getColor(column);
+		if (color) {
+			columnEl.dataset.clarColor = color;
+		}
 		const headerEl = columnEl.createDiv({ cls: 'clar-kanban-column__header' });
 		headerEl.createDiv({ cls: 'clar-kanban-column__title', text: column.label });
-		if (columnMenu) {
-			renderColumnMenuButton(headerEl, column, columnMenu);
-		}
+		renderColumnMenuButton(headerEl, column, columnMenu);
 		if (!isNoColumn) {
 			const handleEl = headerEl.createSpan({
 				cls: COLUMN_HANDLE_CLASS,
@@ -165,16 +173,34 @@ function renderColumnMenuButton(headerEl: HTMLElement, column: KanbanColumn, opt
 	setIcon(buttonEl, 'more-horizontal');
 	buttonEl.addEventListener('click', (evt) => {
 		evt.stopPropagation();
-		const shown = options.isStaleShown(column);
-		new Menu()
-			.addItem((item) =>
+		const menu = new Menu();
+		if (options.showStaleItem) {
+			const shown = options.isStaleShown(column);
+			menu.addItem((item) =>
 				item
 					.setTitle('Show stale icon')
 					.setIcon('hourglass')
 					.setChecked(shown)
 					.onClick(() => options.onToggleStale(column, !shown)),
-			)
-			.showAtMouseEvent(evt);
+			);
+			menu.addSeparator();
+		}
+		const current = options.getColor(column);
+		menu.addItem((item) =>
+			item
+				.setTitle('No color')
+				.setChecked(current === null)
+				.onClick(() => options.onSetColor(column, null)),
+		);
+		for (const color of COLUMN_COLORS) {
+			menu.addItem((item) =>
+				item
+					.setTitle(color.label)
+					.setChecked(current === color.id)
+					.onClick(() => options.onSetColor(column, color.id)),
+			);
+		}
+		menu.showAtMouseEvent(evt);
 	});
 }
 

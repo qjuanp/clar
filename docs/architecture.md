@@ -84,6 +84,24 @@ default. The key is **not** a declared view option, so it only changes from the 
   property value of "No column" can't collide with it.
 - `setStaleColumn(keys, key, shown)` adds or removes one key without mutating its input.
 
+### `src/basesKanvanView/column-colors.ts`
+Pure, unit tested in `column-colors.test.ts`. The per-column card color (column colors
+spec). `COLUMN_COLORS` is the palette, in menu order: Obsidian's 8 theme colors (red,
+orange, yellow, green, cyan, blue, purple, pink). A board stores the chosen colors as a
+YAML map from `columnKey(column)` to color id under the `columnColors` view-config key, for
+example `columnColors: { in-progress: red }`. A column not in the map has no color, which
+is the default. Like `staleColumns`, the key is not a declared view option.
+- `parseColumnColors(raw)` keeps entries whose value is a palette id and treats anything
+  that isn't a map as empty.
+- `setColumnColor(colors, key, color | null)` sets or removes one column's color without
+  mutating its input.
+
+The color itself lives in `styles.css`. `render.ts` sets `data-clar-color="<id>"` on a
+colored column. Each id maps to `--clar-column-color: var(--color-<id>)`, and every card in
+such a column gets a two-layer `box-shadow` mixed from that color with `color-mix()`. The
+theme variables make the shadow follow light, dark and custom themes. The drag clone is
+attached to `document.body`, so it keeps the plain `.sortable-fallback` shadow.
+
 ### `src/basesKanvanView/register-view.ts`
 Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })` from
 `onload()`. The `factory` constructs a `KanbanBasesView`, passing the plugin as its
@@ -191,12 +209,15 @@ or the shape has changed. `buildTagSearchQuery` is unit tested in `tag-search.te
 onColumnsReordered, taskList, columnMenu)` clears and rebuilds the board from scratch on every call. Renders one
 `.clar-kanban-column` per column (carrying `data-column-id`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
-header holds the `.clar-kanban-column__title` text, then (when `columnMenu` is non-null) a
+header holds the `.clar-kanban-column__title` text, then a
 `button.clar-kanban-column__menu` "Column options" button (`more-horizontal` icon), then, for
 every real column, a `.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical`
 icon via `setIcon`); "No column" has no handle but does get the menu button. The button opens
-an Obsidian `Menu` at the click with one checkable item, "Show stale icon"
-(`ColumnMenuOptions.isStaleShown` / `onToggleStale`). The column Sortable drags only by the
+an Obsidian `Menu` at the click. When `ColumnMenuOptions.showStaleItem` is true it starts
+with the checkable "Show stale icon" item (`isStaleShown` / `onToggleStale`) and a
+separator. Then come "No color" and one item per `COLUMN_COLORS` entry, with the current
+color ticked (`getColor` / `onSetColor`). Only public `Menu` calls are used, so native menus
+work too. A colored column gets `data-clar-color`. The column Sortable drags only by the
 handle, so the button never starts a drag. `getCardAge(file, column)` receives the card's
 column, so the view can apply the per-column stale switch. It also renders one `.clar-kanban-card` per entry with a
 `.clar-kanban-card__title` (`entry.file.basename`), then:
@@ -291,9 +312,9 @@ callback (the Obsidian-specific cache lookup, right before handing plain data in
 pure `getTaskStats()`), a `getCardAge` callback, which calls
 `getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, settings, showStale)` with one
 `now` taken per render and `showStale` true only when the card's `columnKey(column)` is in
-`parseStaleColumns(config.get('staleColumns'))`, `ColumnMenuOptions` only when the global
-stale setting is on (the menu's only item is the stale switch, so the button is hidden while
-it is off and the saved per-column choice is kept), `TagRenderOptions` only when `showTags` is explicitly `true`
+`parseStaleColumns(config.get('staleColumns'))`, `ColumnMenuOptions` built from the stale
+list and `parseColumnColors(config.get('columnColors'))`, with `showStaleItem` following
+the global stale setting (the saved per-column stale choice is kept while it is off), `TagRenderOptions` only when `showTags` is explicitly `true`
 (otherwise `null`), `(path, columnId) => this.onCardMoved(...)` for drag-and-drop drops,
 only when the property is a `note.*` property (a group by `file.folder` or a formula can't
 be written, so it passes `null`), and `(columnIds) => this.onColumnsReordered(columnIds)`
@@ -307,7 +328,8 @@ for column reorders.
 `ColumnMenuOptions.onToggleStale` re-reads the stored list, writes
 `setStaleColumn(current, columnKey(column), shown)` back with
 `this.config.set('staleColumns', ...)` (a YAML list, so labels with commas work), and
-re-renders. Bases persists it to the `.base` file.
+re-renders. Bases persists it to the `.base` file. `ColumnMenuOptions.onSetColor` does the
+same for `columnColors` with `setColumnColor(current, columnKey(column), color)`.
 `onColumnsReordered` maps the ids to column values and merges them with the current
 manual order via `mergeColumnOrder(getGroupOrder(config) ?? [], values)`, then calls
 `setGroupOrder(config, merged)`. That is the list the "Group by" menu edits, so both stay in
@@ -383,6 +405,7 @@ flowchart TD
         cardTags["card-tags.ts<br/>normalizeTags()"]
         cardAge["card-age.ts<br/>getCardAgeIndicators()"]
         staleColumns["stale-columns.ts<br/>parseStaleColumns(), setStaleColumn(), columnKey()"]
+        columnColors["column-colors.ts<br/>COLUMN_COLORS, parseColumnColors(), setColumnColor()"]
         tagSearch["tag-search.ts<br/>openTagSearch(), buildTagSearchQuery()"]
     end
 
@@ -438,7 +461,9 @@ flowchart TD
     view -->|"extends BasesView(controller)"| ObsBasesView
     view -->|"constructor(controller, containerEl)"| ObsQueryController
     view -.->|imports| constants
-    view -->|"this.config.get/set('staleColumns' / 'showTags' / 'showTaskList')"| ObsBasesViewConfig
+    view -->|"this.config.get/set('staleColumns' / 'columnColors' / 'showTags' / 'showTaskList')"| ObsBasesViewConfig
+    view -->|"parseColumnColors(raw), setColumnColor(colors, key, color)"| columnColors
+    render -->|"COLUMN_COLORS"| columnColors
     view -->|"getGroupProperty(config), getGroupOrder(config), setGroupOrder(config, order)"| basesGroup
     view -->|"parseStaleColumns(raw), setStaleColumn(keys, key, shown), columnKey(column)"| staleColumns
     view -->|"this.data.groupedData : BasesEntryGroup[]"| ObsBasesQueryResult
@@ -524,8 +549,12 @@ base" for free.
   11 show no stale icons until a column's "Show stale icon" menu item is turned on.
   Recent icons are not affected.
 - **Column menu in e2e tests.** On macOS Obsidian draws menus natively by default, so they
-  never reach the DOM. `toggleColumnStaleIcon()` in `test/e2e/support/kanban-board.ts`
-  turns the `nativeMenus` app config off before opening the menu.
+  never reach the DOM. The column menu helpers in `test/e2e/support/kanban-board.ts` turn
+  the `nativeMenus` app config off before opening the menu. The menu ignores synthetic key
+  and mouse events, so the helpers close it with a real click on the column title.
+- **Column colors are keyed by column label.** Renaming a value, or grouping by another
+  property, leaves the old color entry unused in the `.base` file. It is harmless and
+  applies again if the label comes back.
 - **Recent / stale icons refresh only on re-render.** A re-render happens on any vault
   metadata change, a Bases query change, reopening the base, or a settings change. An
   idle board isn't refreshed on a timer, so an icon can be out of date until the next

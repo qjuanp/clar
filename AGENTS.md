@@ -48,6 +48,7 @@ it for real):
 | `bases-group.ts` | Reads the "Group by" property and manual group order, and saves a new order (uses the view config's undocumented `groupBy` / `groupOrder` / `setGroupOrder`, degrades gracefully) |
 | `card-age.ts` | Pure: decides a card's recent / stale indicators from `file.stat` ctime/mtime + settings + the column's stale switch, and formats the "Not updated for …" relative time |
 | `stale-columns.ts` | Pure: per-column "Show stale icon" switch (spec 11) — parses / updates the board's hidden `staleColumns` config list, keyed by column label (or `NO_COLUMN_ID`) |
+| `column-colors.ts` | Pure: per-column card color (column colors spec) — the 8-color theme palette, and parses / updates the board's hidden `columnColors` map (column key → color id); the shadow itself is in `styles.css` |
 | `tag-search.ts` | Opens Obsidian search for `tag:#<tag>` when a tag pill is clicked (uses the undocumented core Search plugin via `app.internalPlugins`, returns `false` on failure) |
 | `view-options.ts` | Declares the Bases view-config controls (show task list, show tags); columns come from "Group by" |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
@@ -125,7 +126,7 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   `StringValue`/`NumberValue`/`BooleanValue` (the real `obsidian` package ships
   types only, no runtime).
 - Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
-  `card-age.ts`, `stale-columns.ts`, `src/settings/settings-model.ts`,
+  `card-age.ts`, `stale-columns.ts`, `column-colors.ts`, `src/settings/settings-model.ts`,
   `update-column.ts`'s `valueToFrontmatter`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force
@@ -182,8 +183,9 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   text, so wait on the text itself, not the row count. Match text with `textContent`
   rather than `getText()`.
 - **Native menus**: on macOS Obsidian shows `Menu`s natively by default, so they never
-  appear in the DOM. Turn the `nativeMenus` app config off before clicking a menu (see
-  `toggleColumnStaleIcon` in `kanban-board.ts`).
+  appear in the DOM. Turn the `nativeMenus` app config off before clicking a menu, and
+  close a menu with a real click (it ignores synthetic Escape and mousedown events). Use
+  `clickColumnMenuItem` / `readColumnMenuItems` in `kanban-board.ts`.
 - **Column drags can't land after the last column.** The simulated pointer
   settles just before it. To test placement after a column, seed the order in
   the `.base` file instead (see the "No column" test in `column-reorder.e2e.ts`).

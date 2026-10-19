@@ -65,6 +65,22 @@ scope for this pass, these rules just make columns/cards legible.
 	height: var(--icon-s);
 }
 
+/* Column colors: a colored column draws a shadow in its theme color around its cards. */
+.clar-kanban-column[data-clar-color="red"] { --clar-column-color: var(--color-red); }
+.clar-kanban-column[data-clar-color="orange"] { --clar-column-color: var(--color-orange); }
+.clar-kanban-column[data-clar-color="yellow"] { --clar-column-color: var(--color-yellow); }
+.clar-kanban-column[data-clar-color="green"] { --clar-column-color: var(--color-green); }
+.clar-kanban-column[data-clar-color="cyan"] { --clar-column-color: var(--color-cyan); }
+.clar-kanban-column[data-clar-color="blue"] { --clar-column-color: var(--color-blue); }
+.clar-kanban-column[data-clar-color="purple"] { --clar-column-color: var(--color-purple); }
+.clar-kanban-column[data-clar-color="pink"] { --clar-column-color: var(--color-pink); }
+
+.clar-kanban-column[data-clar-color] .clar-kanban-card {
+	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--clar-column-color) 55%, transparent),
+		0 2px 8px color-mix(in srgb, var(--clar-column-color) 35%, transparent);
+}
+
 .clar-kanban-column.sortable-fallback {
 	padding: 4px;
 	background-color: var(--background-secondary);

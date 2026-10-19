@@ -8,6 +8,11 @@ export const KANBAN_OPTION_KEYS = {
 	 * column header menu; deliberately not a declared view option.
 	 */
 	STALE_COLUMNS: 'staleColumns',
+	/**
+	 * Map of column key to card color (column colors spec). Set only from the
+	 * column header menu; deliberately not a declared view option.
+	 */
+	COLUMN_COLORS: 'columnColors',
 } as const;
 
 export const NO_COLUMN_ID = '__no-column__';

@@ -4,7 +4,7 @@
 
 - `npm run test:unit` — fast unit tests for the pure logic
   (`src/basesKanvanView/columns.ts`, `task-stats.ts`, `task-list.ts`, `card-age.ts`,
-  `stale-columns.ts`, …), no Obsidian instance needed.
+  `stale-columns.ts`, `column-colors.ts`, …), no Obsidian instance needed.
 - `npm run test:e2e` — builds the plugin and runs the WDIO Obsidian Service suite
   (`test/e2e/specs/`) against a real, latest-version Obsidian instance, using the
   fixture vault at `test/e2e/vaults/kanban/` (copied to a temp dir per run — the
@@ -124,8 +124,14 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
      column. Click a column's **⋯** button and check **Show stale icon**. Its stale cards
      show the hourglass, other columns stay clean, and the `.base` file gains a
      `staleColumns` list. Uncheck it to hide the icons again. "No column" has the menu too.
-   - Turn **Identify stale cards** off. The **⋯** buttons disappear. Turn it back on and
-     the earlier per-column choices come back.
+   - Turn **Identify stale cards** off. The **⋯** menus lose their **Show stale icon**
+     item but stay for colors. Turn it back on and the earlier per-column choices come
+     back.
+   - **Column colors**. No column has a color at first, and **No color** is ticked in every
+     menu. Pick a color in a column's **⋯** menu. Every card in that column gets a shadow
+     in that color, other columns stay plain, and the `.base` file gains a `columnColors`
+     map. Check all 8 colors in light and dark mode. Pick **No color** to remove the
+     shadow. Dragging a card out of a colored column shows the normal drag shadow.
 11. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
    a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
    - Confirm each card with tasks shows a collapsed footer with a chevron icon (hover:

@@ -23,6 +23,7 @@ import {
 	type TaskListRenderOptions,
 } from './render';
 import { columnKey, parseStaleColumns, setStaleColumn } from './stale-columns';
+import { parseColumnColors, setColumnColor, type ColumnColor } from './column-colors';
 import { openTagSearch } from './tag-search';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
 import { updateEntryColumn } from './update-column';
@@ -94,6 +95,7 @@ export class KanbanBasesView extends BasesView {
 		this.columnsById = new Map(columns.map((column) => [column.id, column]));
 		const now = Date.now();
 		const staleColumns = new Set(parseStaleColumns(this.config.get(KANBAN_OPTION_KEYS.STALE_COLUMNS)));
+		const columnColors = parseColumnColors(this.config.get(KANBAN_OPTION_KEYS.COLUMN_COLORS));
 		const settings = this.settingsProvider.settings;
 		this.sortables = renderKanbanBoard(
 			this.boardEl,
@@ -116,9 +118,9 @@ export class KanbanBasesView extends BasesView {
 			(columnIds) => this.onColumnsReordered(columnIds),
 			// Only an explicit `false` hides the list: an unset option means the default (on).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TASK_LIST) === false ? null : this.taskListOptions(),
-			// The menu's only item is the stale switch, so it goes away with the global
-			// stale setting; the saved per-column choice is kept for when it comes back.
-			settings.staleCards.enabled ? this.columnMenuOptions(staleColumns) : null,
+			// The stale item goes away with the global stale setting; the saved
+			// per-column choice is kept for when it comes back.
+			this.columnMenuOptions(staleColumns, columnColors, settings.staleCards.enabled),
 		);
 	}
 
@@ -167,8 +169,19 @@ export class KanbanBasesView extends BasesView {
 	 * Per-column stale icon switch (spec 11), saved as a string list under a
 	 * config key that isn't a declared view option, so only this menu edits it.
 	 */
-	private columnMenuOptions(staleColumns: ReadonlySet<string>): ColumnMenuOptions {
+	private columnMenuOptions(
+		staleColumns: ReadonlySet<string>,
+		columnColors: Readonly<Record<string, ColumnColor>>,
+		showStaleItem: boolean,
+	): ColumnMenuOptions {
 		return {
+			showStaleItem,
+			getColor: (column) => columnColors[columnKey(column)] ?? null,
+			onSetColor: (column, color) => {
+				const current = parseColumnColors(this.config.get(KANBAN_OPTION_KEYS.COLUMN_COLORS));
+				this.config.set(KANBAN_OPTION_KEYS.COLUMN_COLORS, setColumnColor(current, columnKey(column), color));
+				this.onDataUpdated();
+			},
 			isStaleShown: (column) => staleColumns.has(columnKey(column)),
 			onToggleStale: (column, shown) => {
 				const current = parseStaleColumns(this.config.get(KANBAN_OPTION_KEYS.STALE_COLUMNS));
