@@ -2,9 +2,9 @@
 
 ## Automated tests
 
-- `npm run test:unit` — fast unit tests for the pure grouping/task-stats/task-list logic
-  (`src/basesKanvanView/columns.ts`, `task-stats.ts`, `task-list.ts`), no Obsidian
-  instance needed.
+- `npm run test:unit` — fast unit tests for the pure logic
+  (`src/basesKanvanView/columns.ts`, `task-stats.ts`, `task-list.ts`, `card-age.ts`,
+  `stale-columns.ts`, …), no Obsidian instance needed.
 - `npm run test:e2e` — builds the plugin and runs the WDIO Obsidian Service suite
   (`test/e2e/specs/`) against a real, latest-version Obsidian instance, using the
   fixture vault at `test/e2e/vaults/kanban/` (copied to a temp dir per run — the
@@ -118,8 +118,15 @@ rebuild, then enable **Clár** under **Settings → Community plugins**.
    - Restore 1 week for both. On the board, a newly created note shows a green ✨ icon
      next to its title (hover: "Recently created").
    - A note last modified more than a week ago, and created earlier still, shows an orange
-     hourglass (hover: "Not updated for N weeks"). A note is never shown with both icons.
+     hourglass (hover: "Not updated for N weeks") once its column shows stale icons (see
+     the next step). A note is never shown with both icons.
    - Turning either toggle off removes its icons from open boards immediately.
+   - **Per-column stale icon** (spec 11). Stale icons are hidden by default in every
+     column. Click a column's **⋯** button and check **Show stale icon**. Its stale cards
+     show the hourglass, other columns stay clean, and the `.base` file gains a
+     `staleColumns` list. Uncheck it to hide the icons again. "No column" has the menu too.
+   - Turn **Identify stale cards** off. The **⋯** buttons disappear. Turn it back on and
+     the earlier per-column choices come back.
 11. **Task list** (spec 6). Use a note with nested tasks, including one task nested under
    a plain bullet, a `[[link]]` in a task, and more than 10 tasks in total.
    - Confirm each card with tasks shows a collapsed footer with a chevron icon (hover:

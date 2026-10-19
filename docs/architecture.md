@@ -59,10 +59,11 @@ Edits are handled like this:
 - **Test hooks:** timeframe rows carry `clar-setting-<key>-timeframe` classes.
 
 ### `src/basesKanvanView/card-age.ts`
-Pure, unit tested in `card-age.test.ts`. `getCardAgeIndicators(ctime, mtime, now, settings)`
-returns `{ recent, staleTooltip }`:
+Pure, unit tested in `card-age.test.ts`. `getCardAgeIndicators(ctime, mtime, now, settings,
+showStale = true)` returns `{ recent, staleTooltip }`:
 - **Recent:** the feature is on and `now - ctime ≤ recent timeframe` (inclusive).
-- **Stale:** the feature is on, the card is **not recent**, and `now - mtime > stale
+- **Stale:** the feature is on, `showStale` is true (the card's column shows the stale
+  icon, spec 11), the card is **not recent**, and `now - mtime > stale
   timeframe` (exclusive). The `!recent` check is a runtime guard for the golden rule:
   settings already ensure stale ≥ recent, but file dates can disagree. For example, a
   copied file can keep an old `mtime` while getting a new `ctime`.
@@ -70,6 +71,17 @@ returns `{ recent, staleTooltip }`:
 `formatRelativeDuration(ms)` produces the stale tooltip ("Not updated for 2 weeks"). It
 uses the largest whole unit (months of 30 days, weeks, days, hours), or "less than an
 hour".
+
+### `src/basesKanvanView/stale-columns.ts`
+Pure, unit tested in `stale-columns.test.ts`. Spec 11's per-column "Show stale icon" switch.
+A board stores the keys of the columns that show the stale icon as a YAML string list under
+the `staleColumns` view-config key. A column not in the list hides the icon, which is the
+default. The key is **not** a declared view option, so it only changes from the column menu.
+- `parseStaleColumns(raw)` keeps non-blank strings from a list, without duplicates, and
+  treats anything else as an empty list.
+- `columnKey(column)` is the column label, or `NO_COLUMN_ID` for "No column", so a real
+  property value of "No column" can't collide with it.
+- `setStaleColumn(keys, key, shown)` adds or removes one key without mutating its input.
 
 ### `src/basesKanvanView/register-view.ts`
 Calls `Plugin.registerBasesView(KANBAN_VIEW_TYPE, { name, icon, factory, options })` from
@@ -172,12 +184,17 @@ or the shape has changed. `buildTagSearchQuery` is unit tested in `tag-search.te
 
 ### `src/basesKanvanView/render.ts`
 `renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStats, getCardAge, tags, onCardMoved,
-onColumnsReordered, taskList)` clears and rebuilds the board from scratch on every call. Renders one
+onColumnsReordered, taskList, columnMenu)` clears and rebuilds the board from scratch on every call. Renders one
 `.clar-kanban-column` per column (carrying `data-column-label`; "No column" also gets
 `.clar-kanban-column--no-column`) with a `.clar-kanban-column__header` and a card list. The
-header holds the `.clar-kanban-column__title` text and, for every real column, a
-`.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical` icon via `setIcon`);
-"No column" has no handle. It also renders one `.clar-kanban-card` per entry with a
+header holds the `.clar-kanban-column__title` text, then (when `columnMenu` is non-null) a
+`button.clar-kanban-column__menu` "Column options" button (`more-horizontal` icon), then, for
+every real column, a `.clar-kanban-column__handle` drag handle (Obsidian's `grip-vertical`
+icon via `setIcon`); "No column" has no handle but does get the menu button. The button opens
+an Obsidian `Menu` at the click with one checkable item, "Show stale icon"
+(`ColumnMenuOptions.isStaleShown` / `onToggleStale`). The column Sortable drags only by the
+handle, so the button never starts a drag. `getCardAge(file, column)` receives the card's
+column, so the view can apply the per-column stale switch. It also renders one `.clar-kanban-card` per entry with a
 `.clar-kanban-card__title` (`entry.file.basename`), then:
 - **Tags.** When `tags` (a `TagRenderOptions`) is non-null and `tags.getTags(entry.file)`
   is non-empty, a `.clar-kanban-card__meta` row of `a.tag.clar-kanban-card__tag` pills
@@ -267,8 +284,11 @@ no property is configured yet, otherwise calls `buildKanbanColumns()` then
 `(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? [])`
 callback (the Obsidian-specific cache lookup, right before handing plain data into the
 pure `getTaskStats()`), a `getCardAge` callback, which calls
-`getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, settings)` with one `now` taken
-per render, `TagRenderOptions` only when `showTags` is explicitly `true`
+`getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, settings, showStale)` with one
+`now` taken per render and `showStale` true only when the card's `columnKey(column)` is in
+`parseStaleColumns(config.get('staleColumns'))`, `ColumnMenuOptions` only when the global
+stale setting is on (the menu's only item is the stale switch, so the button is hidden while
+it is off and the saved per-column choice is kept), `TagRenderOptions` only when `showTags` is explicitly `true`
 (otherwise `null`), and `(path, targetColumnLabel) => this.onCardMoved(...)` for
 drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for column reorders.
 `TagRenderOptions` (from `tagOptions()`) has two callbacks:
@@ -277,6 +297,10 @@ drag-and-drop drops, and `(labels) => this.onColumnsReordered(labels)` for colum
   doesn't recognise the legacy comma-string form, so it shows no pills.
 - `onTagClick`: calls `openTagSearch(this.app, tag)`, and shows a `Notice` if that returns
   `false`.
+`ColumnMenuOptions.onToggleStale` re-reads the stored list, writes
+`setStaleColumn(current, columnKey(column), shown)` back with
+`this.config.set('staleColumns', ...)` (a YAML list, so labels with commas work), and
+re-renders. Bases persists it to the `.base` file like `columnOrder`.
 `onColumnsReordered` merges the new order with the current option via
 `mergeColumnOrder(parseColumnOrder(config.get('columnOrder')), labels)` and writes it back
 with `this.config.set('columnOrder', merged.join(', '))`. That is the same comma-separated text
@@ -351,6 +375,7 @@ flowchart TD
         taskList["task-list.ts<br/>buildTaskTree(), setTaskStatusInContent()"]
         cardTags["card-tags.ts<br/>normalizeTags()"]
         cardAge["card-age.ts<br/>getCardAgeIndicators()"]
+        staleColumns["stale-columns.ts<br/>parseStaleColumns(), setStaleColumn(), columnKey()"]
         tagSearch["tag-search.ts<br/>openTagSearch(), buildTagSearchQuery()"]
     end
 
@@ -409,10 +434,11 @@ flowchart TD
     view -->|"extends BasesView(controller)"| ObsBasesView
     view -->|"constructor(controller, containerEl)"| ObsQueryController
     view -.->|imports| constants
-    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder')"| ObsBasesViewConfig
+    view -->|"this.config.getAsPropertyId('groupProperty'), this.config.get/set('columnOrder' / 'staleColumns')"| ObsBasesViewConfig
+    view -->|"parseStaleColumns(raw), setStaleColumn(keys, key, shown), columnKey(column)"| staleColumns
     view -->|"this.data.data : BasesEntry[]"| ObsBasesQueryResult
     view -->|"buildKanbanColumns(entries, groupProperty, columnOrder), mergeColumnOrder(previous, labels)"| columns
-    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, tagOptions, onCardMoved, onColumnsReordered, taskListOptions)"| render
+    view -->|"renderKanbanBoard(boardEl, columns, onOpenFile, getTaskStatsFn, getCardAgeFn, tagOptions, onCardMoved, onColumnsReordered, taskListOptions, columnMenuOptions)"| render
     view -->|"openTagSearch(app, tag)"| tagSearch
     tagSearch -->|"getEnabledPluginById('global-search').openGlobalSearch('tag:#x')"| ObsInternalPlugins
     view -->|"normalizeTags(parseFrontMatterTags(frontmatter))"| cardTags
@@ -487,6 +513,12 @@ base" for free.
 - **Recent / stale use file-system dates.** They come from `file.stat.ctime` and `mtime`.
   Sync tools, git clones and copies can reset a note's creation date, which makes old
   notes look recent. The runtime guard keeps those notes from also showing as stale.
+- **Stale icons are hidden per column by default (spec 11).** Boards created before spec
+  11 show no stale icons until a column's "Show stale icon" menu item is turned on.
+  Recent icons are not affected.
+- **Column menu in e2e tests.** On macOS Obsidian draws menus natively by default, so they
+  never reach the DOM. `toggleColumnStaleIcon()` in `test/e2e/support/kanban-board.ts`
+  turns the `nativeMenus` app config off before opening the menu.
 - **Recent / stale icons refresh only on re-render.** A re-render happens on any vault
   metadata change, a Bases query change, reopening the base, or a settings change. An
   idle board isn't refreshed on a timer, so an icon can be out of date until the next
@@ -530,7 +562,8 @@ base" for free.
   `test/e2e/specs/column-reorder.e2e.ts`, card-style coverage in
   `test/e2e/specs/card-style.e2e.ts`, recent/stale indicator and settings-tab coverage in
   `test/e2e/specs/card-age.e2e.ts` (which backdates `TFile.stat` in memory, since tests
-  can't set real creation dates) and task-list coverage in
+  can't set real creation dates), per-column stale icon coverage in
+  `test/e2e/specs/column-menu.e2e.ts` and task-list coverage in
   `test/e2e/specs/task-list.e2e.ts` (drags are simulated via a manual
   W3C Actions pointer sequence rather than WebdriverIO's built-in `dragAndDrop`, and
   `forceFallback: true` above is what makes that reliable against SortableJS). See

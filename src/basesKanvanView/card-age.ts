@@ -21,7 +21,8 @@ const RELATIVE_UNITS: { ms: number; singular: string; plural: string }[] = [
 
 /**
  * recent = recent feature enabled && (now - ctime) <= recent timeframe   (inclusive)
- * stale  = stale feature enabled && !recent && (now - mtime) > stale timeframe   (exclusive)
+ * stale  = stale feature enabled && showStale && !recent && (now - mtime) > stale timeframe   (exclusive)
+ * `showStale` is the per-column switch from the column menu (spec 11).
  * `!recent` is a runtime guard for the golden rule: settings guarantee
  * stale ≥ recent, but file dates can disagree (e.g. a copied file with an
  * old mtime and a new ctime), and a recent card must never look stale.
@@ -31,11 +32,12 @@ export function getCardAgeIndicators(
 	mtime: number,
 	now: number,
 	settings: ClarSettings,
+	showStale = true,
 ): CardAgeIndicators {
 	const recent =
 		settings.recentCards.enabled && now - ctime <= timeframeToMs(settings.recentCards.timeframe);
 	const stale =
-		settings.staleCards.enabled && !recent && now - mtime > timeframeToMs(settings.staleCards.timeframe);
+		settings.staleCards.enabled && showStale && !recent && now - mtime > timeframeToMs(settings.staleCards.timeframe);
 	return {
 		recent,
 		staleTooltip: stale ? `Not updated for ${formatRelativeDuration(now - mtime)}` : null,

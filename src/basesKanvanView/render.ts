@@ -1,5 +1,5 @@
 import Sortable from 'sortablejs';
-import { setIcon, setTooltip, type TFile } from 'obsidian';
+import { Menu, setIcon, setTooltip, type TFile } from 'obsidian';
 import type { KanbanColumn } from './columns';
 import type { TaskStats } from './task-stats';
 import { RECENT_TOOLTIP, type CardAgeIndicators } from './card-age';
@@ -25,10 +25,20 @@ export interface TagRenderOptions {
 	onTagClick: (tag: string) => void;
 }
 
+/**
+ * Callbacks for the column header menu (spec 11). Its only item so far toggles
+ * the stale icon on the column's cards.
+ */
+export interface ColumnMenuOptions {
+	isStaleShown: (column: KanbanColumn) => boolean;
+	onToggleStale: (column: KanbanColumn, shown: boolean) => void;
+}
+
 const TASK_LIST_CLASS = 'clar-kanban-card__tasks';
 const COLUMN_CLASS = 'clar-kanban-column';
 const NO_COLUMN_CLASS = 'clar-kanban-column--no-column';
 const COLUMN_HANDLE_CLASS = 'clar-kanban-column__handle';
+const COLUMN_MENU_CLASS = 'clar-kanban-column__menu';
 
 /**
  * Rebuilds the board from scratch on every call. Drag-and-drop moves are
@@ -38,18 +48,19 @@ const COLUMN_HANDLE_CLASS = 'clar-kanban-column__handle';
  * via `onColumnsReordered` with the new order of real column labels.
  * Pass `taskList: null` to hide the per-card task list; a card's task stats
  * (active count + progress bar) are shown either way. Pass `tags: null` to
- * hide the tag pills.
+ * hide the tag pills. Pass `columnMenu: null` to hide the column header menu.
  */
 export function renderKanbanBoard(
 	boardEl: HTMLElement,
 	columns: KanbanColumn[],
 	onOpenFile: (file: TFile) => void,
 	getTaskStats: (file: TFile) => TaskStats | null,
-	getCardAge: (file: TFile) => CardAgeIndicators,
+	getCardAge: (file: TFile, column: KanbanColumn) => CardAgeIndicators,
 	tags: TagRenderOptions | null,
 	onCardMoved: (path: string, targetColumnLabel: string) => void,
 	onColumnsReordered: (labels: string[]) => void,
 	taskList: TaskListRenderOptions | null,
+	columnMenu: ColumnMenuOptions | null,
 ): Sortable[] {
 	boardEl.empty();
 
@@ -69,6 +80,9 @@ export function renderKanbanBoard(
 		columnEl.dataset.columnLabel = column.label;
 		const headerEl = columnEl.createDiv({ cls: 'clar-kanban-column__header' });
 		headerEl.createDiv({ cls: 'clar-kanban-column__title', text: column.label });
+		if (columnMenu) {
+			renderColumnMenuButton(headerEl, column, columnMenu);
+		}
 		if (!isNoColumn) {
 			const handleEl = headerEl.createSpan({
 				cls: COLUMN_HANDLE_CLASS,
@@ -82,7 +96,7 @@ export function renderKanbanBoard(
 		for (const entry of column.entries) {
 			const cardEl = cardsEl.createDiv({ cls: 'clar-kanban-card' });
 			cardEl.dataset.path = entry.file.path;
-			renderCardHeader(cardEl, entry.file.basename, getCardAge(entry.file));
+			renderCardHeader(cardEl, entry.file.basename, getCardAge(entry.file, column));
 
 			if (tags) {
 				renderTagPills(cardEl, entry.file, tags);
@@ -134,6 +148,31 @@ export function renderKanbanBoard(
 
 	sortables.push(createColumnSortable(boardEl, onColumnsReordered));
 	return sortables;
+}
+
+/**
+ * The "Column options" button in a column header. The column Sortable drags
+ * only by the handle, so pressing this button never starts a column drag.
+ */
+function renderColumnMenuButton(headerEl: HTMLElement, column: KanbanColumn, options: ColumnMenuOptions): void {
+	const buttonEl = headerEl.createEl('button', {
+		cls: ['clickable-icon', COLUMN_MENU_CLASS],
+		attr: { 'aria-label': 'Column options' },
+	});
+	setIcon(buttonEl, 'more-horizontal');
+	buttonEl.addEventListener('click', (evt) => {
+		evt.stopPropagation();
+		const shown = options.isStaleShown(column);
+		new Menu()
+			.addItem((item) =>
+				item
+					.setTitle('Show stale icon')
+					.setIcon('hourglass')
+					.setChecked(shown)
+					.onClick(() => options.onToggleStale(column, !shown)),
+			)
+			.showAtMouseEvent(evt);
+	});
 }
 
 /**

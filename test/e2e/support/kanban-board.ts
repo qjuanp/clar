@@ -620,3 +620,56 @@ export async function readCardIndicators(cardTitle: string): Promise<CardIndicat
 		};
 	}, cardTitle);
 }
+
+/** Whether the column with the given label renders the "Column options" menu button (spec 11). */
+export async function columnHasMenu(columnLabel: string): Promise<boolean> {
+	return (await findColumnElement(columnLabel)).$('.clar-kanban-column__menu').isExisting();
+}
+
+/**
+ * Opens a column's header menu and clicks "Show stale icon", which flips the
+ * column's stale switch and saves it to the board's `.base` file.
+ * Obsidian draws menus with the OS ("native menus") by default on macOS, which
+ * never reach the DOM, so this switches the app to its DOM menus first.
+ */
+export async function toggleColumnStaleIcon(columnLabel: string): Promise<void> {
+	await browser.executeObsidian(({ app }) => {
+		(app.vault as unknown as { setConfig(key: string, value: unknown): void }).setConfig('nativeMenus', false);
+	});
+	await (await findColumnElement(columnLabel)).$('.clar-kanban-column__menu').click();
+	const clicked = await browser.waitUntil(
+		() =>
+			browser.execute(() => {
+				const item = Array.from(document.querySelectorAll<HTMLElement>('.menu .menu-item')).find(
+					(el) => el.querySelector('.menu-item-title')?.textContent === 'Show stale icon',
+				);
+				item?.click();
+				return item !== undefined;
+			}),
+		{ timeout: 5000, timeoutMsg: `"Show stale icon" menu item never appeared for column "${columnLabel}"` },
+	);
+	if (!clicked) {
+		throw new Error(`Could not click "Show stale icon" for column "${columnLabel}"`);
+	}
+	await browser.waitUntil(async () => (await browser.$$('.menu').getElements()).length === 0, {
+		timeout: 5000,
+		timeoutMsg: 'Column menu never closed',
+	});
+}
+
+/**
+ * The `staleColumns` list stored for a view in a `.base` file, or null when
+ * that view has no such entry. Parses the raw file with Obsidian's YAML parser,
+ * so it reflects what was actually persisted rather than in-memory view state.
+ */
+export async function readBaseStaleColumns(path: string, viewIndex = 0): Promise<unknown> {
+	const content = await readNote(path);
+	return browser.executeObsidian(
+		({ obsidian }, raw, index) => {
+			const parsed = obsidian.parseYaml(raw) as { views?: { staleColumns?: unknown }[] } | null;
+			return parsed?.views?.[index]?.staleColumns ?? null;
+		},
+		content,
+		viewIndex,
+	);
+}

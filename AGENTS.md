@@ -45,7 +45,8 @@ it for real):
 | `task-list.ts` | Pure: builds a note's tasks into a nested `TaskNode[]` tree (file order, hierarchy) and rewrites one task's checkbox in raw content |
 | `update-column.ts` | Writes the dropped card's target column value into frontmatter via `app.fileManager.processFrontMatter` |
 | `property-type.ts` | Filters the "Column property" dropdown to list-type properties (uses undocumented `app.metadataTypeManager`, degrades gracefully) |
-| `card-age.ts` | Pure: decides a card's recent / stale indicators from `file.stat` ctime/mtime + settings, and formats the "Not updated for …" relative time |
+| `card-age.ts` | Pure: decides a card's recent / stale indicators from `file.stat` ctime/mtime + settings + the column's stale switch, and formats the "Not updated for …" relative time |
+| `stale-columns.ts` | Pure: per-column "Show stale icon" switch (spec 11) — parses / updates the board's hidden `staleColumns` config list, keyed by column label (or `NO_COLUMN_ID`) |
 | `tag-search.ts` | Opens Obsidian search for `tag:#<tag>` when a tag pill is clicked (uses the undocumented core Search plugin via `app.internalPlugins`, returns `false` on failure) |
 | `view-options.ts` | Declares the Bases view-config controls (column property, column order, show task list) |
 | `register-view.ts` | `Plugin.registerBasesView(...)` registration |
@@ -119,7 +120,7 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
   — a small hand-rolled stand-in for `Value`/`ListValue`/`NullValue`/
   `StringValue` (the real `obsidian` package ships types only, no runtime).
 - Only pure logic is unit tested (`columns.ts`, `task-stats.ts`, `task-list.ts`, `card-tags.ts`,
-  `card-age.ts`, `src/settings/settings-model.ts`,
+  `card-age.ts`, `stale-columns.ts`, `src/settings/settings-model.ts`,
   `update-column.ts`'s `buildFrontmatterListValue`, `tag-search.ts`'s `buildTagSearchQuery`). Anything that needs a
   live `App`/`TFile` (e.g. `updateEntryColumn`'s actual
   `processFrontMatter` call) is covered by e2e instead — don't try to force
@@ -171,6 +172,9 @@ npm run setup-test-vault    # symlinks dist/ into $OBSIDIAN_TEST_VAULT/.obsidian
 - **Async markdown text**: task-list rows appear before `MarkdownRenderer` fills their
   text, so wait on the text itself, not the row count. Match text with `textContent`
   rather than `getText()`.
+- **Native menus**: on macOS Obsidian shows `Menu`s natively by default, so they never
+  appear in the DOM. Turn the `nativeMenus` app config off before clicking a menu (see
+  `toggleColumnStaleIcon` in `kanban-board.ts`).
 - A brief visual "flicker" after a drop (card briefly back in its old column
   before the frontmatter write lands) is an accepted, documented limitation —
   don't try to eliminate it by polling harder; see `docs/architecture.md`'s

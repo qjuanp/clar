@@ -13,7 +13,13 @@ import { buildKanbanColumns, mergeColumnOrder } from './columns';
 import { getCardAgeIndicators } from './card-age';
 import { normalizeTags } from './card-tags';
 import { getTaskStats } from './task-stats';
-import { renderKanbanBoard, type TagRenderOptions, type TaskListRenderOptions } from './render';
+import {
+	renderKanbanBoard,
+	type ColumnMenuOptions,
+	type TagRenderOptions,
+	type TaskListRenderOptions,
+} from './render';
+import { columnKey, parseStaleColumns, setStaleColumn } from './stale-columns';
 import { openTagSearch } from './tag-search';
 import { buildTaskTree, setTaskStatusInContent, type TaskNode } from './task-list';
 import { updateEntryColumn } from './update-column';
@@ -89,18 +95,30 @@ export class KanbanBasesView extends BasesView {
 		const columnOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
 		const columns = buildKanbanColumns(this.data.data, groupProperty, columnOrder);
 		const now = Date.now();
+		const staleColumns = new Set(parseStaleColumns(this.config.get(KANBAN_OPTION_KEYS.STALE_COLUMNS)));
+		const settings = this.settingsProvider.settings;
 		this.sortables = renderKanbanBoard(
 			this.boardEl,
 			columns,
 			(file) => this.openFile(file),
 			(file) => getTaskStats(this.app.metadataCache.getFileCache(file)?.listItems ?? []),
-			(file) => getCardAgeIndicators(file.stat.ctime, file.stat.mtime, now, this.settingsProvider.settings),
+			(file, column) =>
+				getCardAgeIndicators(
+					file.stat.ctime,
+					file.stat.mtime,
+					now,
+					settings,
+					staleColumns.has(columnKey(column)),
+				),
 			// Tags are opt-in: only an explicit `true` shows them (default off).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TAGS) === true ? this.tagOptions() : null,
 			(path, targetColumnLabel) => this.onCardMoved(path, targetColumnLabel),
 			(labels) => this.onColumnsReordered(labels),
 			// Only an explicit `false` hides the list: an unset option means the default (on).
 			this.config.get(KANBAN_OPTION_KEYS.SHOW_TASK_LIST) === false ? null : this.taskListOptions(),
+			// The menu's only item is the stale switch, so it goes away with the global
+			// stale setting; the saved per-column choice is kept for when it comes back.
+			settings.staleCards.enabled ? this.columnMenuOptions(staleColumns) : null,
 		);
 	}
 
@@ -134,6 +152,21 @@ export class KanbanBasesView extends BasesView {
 	private onColumnsReordered(labels: string[]): void {
 		const previousOrder = parseColumnOrder(this.config.get(KANBAN_OPTION_KEYS.COLUMN_ORDER));
 		this.config.set(KANBAN_OPTION_KEYS.COLUMN_ORDER, mergeColumnOrder(previousOrder, labels).join(', '));
+	}
+
+	/**
+	 * Per-column stale icon switch (spec 11), saved as a string list under a
+	 * config key that isn't a declared view option, so only this menu edits it.
+	 */
+	private columnMenuOptions(staleColumns: ReadonlySet<string>): ColumnMenuOptions {
+		return {
+			isStaleShown: (column) => staleColumns.has(columnKey(column)),
+			onToggleStale: (column, shown) => {
+				const current = parseStaleColumns(this.config.get(KANBAN_OPTION_KEYS.STALE_COLUMNS));
+				this.config.set(KANBAN_OPTION_KEYS.STALE_COLUMNS, setStaleColumn(current, columnKey(column), shown));
+				this.onDataUpdated();
+			},
+		};
 	}
 
 	private tagOptions(): TagRenderOptions {

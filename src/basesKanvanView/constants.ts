@@ -5,6 +5,11 @@ export const KANBAN_OPTION_KEYS = {
 	COLUMN_ORDER: 'columnOrder',
 	SHOW_TASK_LIST: 'showTaskList',
 	SHOW_TAGS: 'showTags',
+	/**
+	 * Column keys whose cards show the stale icon (spec 11). Set only from the
+	 * column header menu; deliberately not a declared view option.
+	 */
+	STALE_COLUMNS: 'staleColumns',
 } as const;
 
 export const NO_COLUMN_ID = '__no-column__';

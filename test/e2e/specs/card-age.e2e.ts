@@ -9,6 +9,7 @@ import {
 	readClarSettings,
 	setClarSettings,
 	setFileTimes,
+	toggleColumnStaleIcon,
 	type CardIndicatorsSnapshot,
 	type ClarSettingsSnapshot,
 } from '../support/kanban-board';
@@ -64,6 +65,8 @@ describe('Recent and stale card indicators (spec 10)', function () {
 
 	it('marks a note not updated for longer than the timeframe as stale, with a relative time', async function () {
 		await openBase('Board.base');
+		// Spec 11: the stale icon is hidden per column until turned on from its menu.
+		await toggleColumnStaleIcon('in-progress');
 		await setFileTimes('Projects/Marketing Plan.md', { createdAgoMs: 30 * DAY, updatedAgoMs: 10 * DAY });
 
 		await waitForIndicators('Marketing Plan', { recent: null, stale: 'Not updated for 1 week' });
@@ -94,6 +97,8 @@ describe('Recent and stale card indicators (spec 10)', function () {
 
 	it('hides the stale icon when "Identify stale cards" is turned off', async function () {
 		await openBase('Board.base');
+		// Spec 11: the stale icon is hidden per column until turned on from its menu.
+		await toggleColumnStaleIcon('in-progress');
 		await setFileTimes('Projects/Marketing Plan.md', { createdAgoMs: 30 * DAY, updatedAgoMs: 10 * DAY });
 		await waitForIndicators('Marketing Plan', { recent: null, stale: 'Not updated for 1 week' });
 
@@ -109,6 +114,7 @@ describe('Recent and stale card indicators (spec 10)', function () {
 			}),
 		);
 		await openBase('Board.base');
+		await toggleColumnStaleIcon('in-progress');
 		await setFileTimes('Projects/Marketing Plan.md', { createdAgoMs: 30 * DAY, updatedAgoMs: 4 * DAY });
 
 		await waitForIndicators('Marketing Plan', { recent: null, stale: 'Not updated for 4 days' });

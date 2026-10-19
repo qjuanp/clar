@@ -33,6 +33,7 @@ scope for this pass, these rules just make columns/cards legible.
 }
 
 .clar-kanban-column__title {
+	flex: 1 1 auto;
 	font-weight: 600;
 	min-width: 0;
 	overflow-wrap: anywhere;
@@ -49,6 +50,16 @@ scope for this pass, these rules just make columns/cards legible.
 	color: var(--text-muted);
 }
 
+.clar-kanban-column__menu {
+	flex: 0 0 auto;
+	color: var(--text-faint);
+}
+
+.clar-kanban-column__menu:hover {
+	color: var(--text-muted);
+}
+
+.clar-kanban-column__menu svg,
 .clar-kanban-column__handle svg {
 	width: var(--icon-s);
 	height: var(--icon-s);

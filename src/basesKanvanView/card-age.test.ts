@@ -46,6 +46,22 @@ describe('getCardAgeIndicators', () => {
 		expect(getCardAgeIndicators(NOW, NOW - 365 * DAY, NOW, settings).staleTooltip).toBe('Not updated for 12 months');
 	});
 
+	it('hides the stale icon when its column does not show it (spec 11)', () => {
+		const settings = createDefaultSettings();
+		expect(getCardAgeIndicators(NOW - 30 * DAY, NOW - 30 * DAY, NOW, settings, false)).toEqual({
+			recent: false,
+			staleTooltip: null,
+		});
+		expect(getCardAgeIndicators(NOW - 30 * DAY, NOW - 30 * DAY, NOW, settings, true).staleTooltip).toBe(
+			'Not updated for 1 month',
+		);
+	});
+
+	it('keeps the recent icon whatever the column stale switch says', () => {
+		const settings = createDefaultSettings();
+		expect(getCardAgeIndicators(NOW - HOUR, NOW - HOUR, NOW, settings, false).recent).toBe(true);
+	});
+
 	it('exposes the recent tooltip text', () => {
 		expect(RECENT_TOOLTIP).toBe('Recently created');
 	});
