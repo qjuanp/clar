@@ -24,3 +24,5 @@ jobs:
                   path: .obsidian-cache
                   key: obsidian-latest-${{ runner.os }}
             - run: xvfb-run --auto-servernum npm run test:e2e
+              env:
+                    WDIO_MAX_INSTANCES: 2

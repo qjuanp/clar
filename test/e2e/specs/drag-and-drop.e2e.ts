@@ -67,10 +67,9 @@ describe('Drag and drop (spec 5)', function () {
 		// Mobile App.md starts as `owner: Bob`.
 		await dragCardToColumn('Mobile App', 'Alice');
 
-		await browser.waitUntil(
-			async () => (await readFrontmatterProperty('Projects/Mobile App.md', 'owner')) === 'Alice',
-			{ timeout: 10000, timeoutMsg: 'Mobile App.md owner was never updated to the plain string "Alice"' },
-		);
+		await browser.pause(500);
+		const owner = await readFrontmatterProperty('Projects/Mobile App.md', 'owner');
+		expect(owner).toEqual('Alice')
 	});
 
 	it('does not move cards when "Group by" is a property it cannot write, like the folder (spec 12)', async function () {
