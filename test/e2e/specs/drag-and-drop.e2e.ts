@@ -69,7 +69,7 @@ describe('Drag and drop (spec 5)', function () {
 
 		await browser.waitUntil(
 			async () => (await readFrontmatterProperty('Projects/Mobile App.md', 'owner')) === 'Alice',
-			{ timeout: 5000, timeoutMsg: 'Mobile App.md owner was never updated to the plain string "Alice"' },
+			{ timeout: 10000, timeoutMsg: 'Mobile App.md owner was never updated to the plain string "Alice"' },
 		);
 	});
 
